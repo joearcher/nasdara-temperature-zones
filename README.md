@@ -2,7 +2,7 @@
 
 Draw temperature zones on a terrain map of DayZ's Nasdara, then export them as the `config.json` for the NasdaraHardcore_TemperatureZones server mod.
 
-**Open the map: https://joearcher.github.io/nasdara-temperature-zones/**
+**Open the map: https://zones.bgom.dev/**
 
 ## Using it
 
