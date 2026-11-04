@@ -1,0 +1,1276 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Nasdara Temperature Zones</title>
+<meta name="description" content="Draw temperature zones on a terrain map of DayZ's Nasdara and export them as a TemperatureZones config.json.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%231e5a57'/%3E%3Cpath d='M16 6a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7z' fill='%23fff'/%3E%3C/svg%3E">
+<style>:root{color-scheme:light;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}body{margin:0;font:14px system-ui,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a survey-table workspace. Toolbar over a full-bleed terrain map, a docked zone panel on the right (below on phones). */
+:root {
+  --bg: #e6e9e4;
+  --panel: #f6f7f4;
+  --raised: #ffffff;
+  --ink: #1b2220;
+  --muted: #59625d;
+  --line: #c8cec7;
+  --chip: #e0e5df;
+  --accent: #1e5a57;
+  --accent-ink: #ffffff;
+  --accent-soft: #d5e5e2;
+  --danger: #a3392a;
+  --hot: #c8452b;
+  --cold: #2f6fb5;
+  --map-bg: #cfcabd;
+  --map-ink: #27231e;
+  --map-ink-soft: #4f4a43;
+  --map-halo: rgba(255, 255, 255, 0.86);
+  --map-grid: rgba(255, 255, 255, 0.5);
+  --map-bld: rgba(40, 34, 28, 0.72);
+  --strip: rgba(246, 247, 244, 0.86);
+  --font-display: "Barlow Condensed", "Arial Narrow", "Segoe UI", system-ui, sans-serif;
+  --font-body: "Barlow", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111513; --panel: #181d1b; --raised: #1f2522; --ink: #e3e8e2; --muted: #9ba49d; --line: #2d3531; --chip: #252c29;
+    --accent: #63b5ae; --accent-ink: #0c1211; --accent-soft: #1f3836; --danger: #e47562; --hot: #e2694f; --cold: #5f9de2;
+    --map-bg: #0d100f; --strip: rgba(24, 29, 27, 0.86); color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111513; --panel: #181d1b; --raised: #1f2522; --ink: #e3e8e2; --muted: #9ba49d; --line: #2d3531; --chip: #252c29;
+  --accent: #63b5ae; --accent-ink: #0c1211; --accent-soft: #1f3836; --danger: #e47562; --hot: #e2694f; --cold: #5f9de2;
+  --map-bg: #0d100f; --strip: rgba(24, 29, 27, 0.86); color-scheme: dark;
+}
+
+html { height: 100%; box-sizing: border-box; }
+*, *::before, *::after { box-sizing: inherit; }
+body { height: 100%; background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.45; display: flex; flex-direction: column; min-height: 0; }
+button, input, select, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.app-header { display: flex; align-items: center; justify-content: space-between; gap: 8px 16px; flex-wrap: wrap; padding-block: 10px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); background: var(--panel); border-bottom: 1px solid var(--line); }
+.app-header h1 { margin: 0; font-family: var(--font-display); font-weight: 700; font-size: 1.6rem; letter-spacing: 0.01em; line-height: 1.05; text-wrap: balance; }
+.app-header p { margin: 2px 0 0; color: var(--muted); font-size: 0.86rem; }
+.status { display: inline-flex; align-items: center; gap: 7px; padding: 4px 10px; border-radius: 999px; background: var(--chip); color: var(--muted); font-size: 0.8rem; font-weight: 500; white-space: nowrap; }
+.status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+.status[data-state="saved"]::before { background: var(--accent); }
+.status[data-state="saving"]::before { background: var(--hot); }
+.status[data-state="error"], .status[data-state="readonly"] { color: var(--danger); }
+.status[data-state="error"]::before, .status[data-state="readonly"]::before { background: var(--danger); }
+
+.workspace { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 384px; }
+.map-col { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; min-width: 0; min-height: 0; }
+
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 8px max(12px, env(safe-area-inset-left, 0px)); background: var(--panel); border-bottom: 1px solid var(--line); }
+.tool-group { display: flex; align-items: center; gap: 6px; }
+.tool-group > .label { font-family: var(--font-display); font-size: 0.78rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.seg { display: inline-flex; background: var(--chip); border-radius: 8px; padding: 2px; gap: 2px; }
+.seg button { border: 0; background: transparent; padding: 5px 10px; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; font-size: 0.88rem; font-weight: 500; color: var(--muted); white-space: nowrap; }
+.seg button:hover { color: var(--ink); }
+.seg button[aria-pressed="true"] { background: var(--raised); color: var(--ink); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12); }
+.seg button svg { width: 15px; height: 15px; flex: none; }
+.toolbar .seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+select { background: var(--chip); border: 0; border-radius: 8px; padding: 6px 8px; font-size: 0.88rem; }
+.kbd-hint { color: var(--muted); font-size: 0.78rem; margin-left: auto; }
+
+.map-wrap { position: relative; min-height: 0; overflow: hidden; background: var(--map-bg); }
+#map { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; user-select: none; -webkit-user-select: none; cursor: grab; }
+#map.is-panning { cursor: grabbing; }
+#map.is-drawing { cursor: crosshair; }
+#map [data-zone] { cursor: move; }
+#map.is-drawing [data-zone] { cursor: crosshair; }
+#map [data-handle] { cursor: pointer; }
+.names text { fill: var(--map-ink); stroke: var(--map-halo); paint-order: stroke; stroke-linejoin: round; font-family: var(--font-body); pointer-events: none; text-anchor: middle; dominant-baseline: central; }
+.names .n-city { font-weight: 700; font-size: 1.18em; }
+.names .n-village { font-weight: 600; font-size: 0.98em; display: none; }
+.names .n-minor { font-weight: 500; font-style: italic; font-size: 0.86em; fill: var(--map-ink-soft); display: none; }
+.names.show-village .n-village, .names.show-minor .n-minor { display: inline; }
+.zone-label { pointer-events: none; text-anchor: middle; dominant-baseline: central; font-family: var(--font-display); stroke: var(--map-halo); paint-order: stroke; stroke-linejoin: round; }
+.zone-label .zl-name { font-weight: 700; font-size: 1.25em; }
+.zone-label .zl-temp { font-weight: 600; font-size: 1.1em; }
+
+.axis { position: absolute; pointer-events: none; background: var(--strip); font-family: var(--font-data); font-size: 10.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.axis-x { top: 0; left: 0; right: 0; height: 18px; }
+.axis-z { top: 18px; left: 0; bottom: 0; width: 44px; }
+.axis span { position: absolute; white-space: nowrap; line-height: 18px; }
+.axis-x span { top: 0; transform: translateX(-50%); }
+.axis-z span { right: 5px; transform: translateY(-50%); }
+
+.map-controls { position: absolute; right: calc(12px + env(safe-area-inset-right, 0px)); bottom: 12px; display: flex; flex-direction: column; gap: 6px; }
+.map-controls button { width: 36px; height: 36px; border-radius: 8px; border: 1px solid var(--line); background: var(--raised); color: var(--ink); cursor: pointer; display: grid; place-items: center; font-size: 1.15rem; line-height: 1; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15); }
+.map-controls button svg { width: 16px; height: 16px; }
+.legend { position: absolute; left: 54px; bottom: 12px; background: var(--strip); border-radius: 8px; padding: 7px 10px; font-size: 0.76rem; color: var(--ink); max-width: calc(100% - 120px); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12); }
+.legend ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 3px 10px; }
+.legend li { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.legend i { width: 12px; height: 10px; border-radius: 2px; display: inline-block; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.18); }
+.legend .ramp { display: flex; align-items: center; gap: 8px; font-family: var(--font-data); font-size: 0.72rem; }
+.legend .ramp b { width: 140px; height: 10px; border-radius: 3px; display: inline-block; }
+
+.readout { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; padding: 6px max(12px, env(safe-area-inset-left, 0px)); background: var(--panel); border-top: 1px solid var(--line); font-size: 0.84rem; min-height: 34px; }
+.readout .coords { font-family: var(--font-data); font-variant-numeric: tabular-nums; font-size: 0.8rem; }
+.readout .muted { color: var(--muted); }
+.readout .zone-hit { font-weight: 600; }
+
+.panel { background: var(--panel); border-left: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.tabs { display: flex; gap: 4px; padding: 10px 16px 0; border-bottom: 1px solid var(--line); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.tabs button { border: 0; background: transparent; padding: 8px 12px; border-bottom: 2px solid transparent; margin-bottom: -1px; cursor: pointer; font-family: var(--font-display); font-weight: 600; font-size: 1.02rem; letter-spacing: 0.02em; color: var(--muted); }
+.tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+.tabs .count { font-family: var(--font-data); font-size: 0.75rem; background: var(--chip); border-radius: 999px; padding: 1px 7px; margin-left: 4px; }
+.panel-body { flex: 1; min-height: 0; overflow: auto; padding-block: 14px 24px; padding-left: 16px; padding-right: max(16px, env(safe-area-inset-right, 0px)); display: flex; flex-direction: column; gap: 14px; }
+
+.note { margin: 0; padding: 9px 12px; border-radius: 8px; background: var(--chip); color: var(--muted); font-size: 0.84rem; }
+.note.warn { color: var(--danger); }
+.empty { margin: 0; color: var(--muted); font-size: 0.9rem; }
+
+.zone-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.zone-list button { width: 100%; display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; align-items: center; gap: 10px; text-align: left; border: 1px solid transparent; background: transparent; border-radius: 8px; padding: 7px 9px; cursor: pointer; }
+.zone-list button:hover { background: var(--chip); }
+.zone-list button[aria-current="true"] { background: var(--raised); border-color: var(--line); }
+.zone-list .sw { width: 14px; height: 14px; border-radius: 3px; }
+.zone-list .zn { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.zone-list .zm { display: block; font-size: 0.78rem; color: var(--muted); font-weight: 400; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.zone-list .zt { font-family: var(--font-data); font-size: 0.86rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.editor { border-top: 1px solid var(--line); padding-top: 14px; display: flex; flex-direction: column; gap: 12px; }
+.editor-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.editor-head h2 { margin: 0; font-family: var(--font-display); font-weight: 700; font-size: 1.25rem; letter-spacing: 0.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.actions { display: flex; gap: 6px; }
+.btn { border: 1px solid var(--line); background: var(--raised); border-radius: 7px; padding: 5px 11px; cursor: pointer; font-size: 0.86rem; font-weight: 500; }
+.btn:hover { border-color: var(--muted); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn.danger { color: var(--danger); }
+.btn.danger.confirm { background: var(--danger); border-color: var(--danger); color: var(--raised); }
+.btn:disabled { opacity: 0.5; cursor: default; }
+
+.field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.field > span, fieldset legend { font-family: var(--font-display); font-size: 0.78rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.field small, fieldset small { color: var(--muted); font-size: 0.8rem; }
+input[type="text"], input[type="number"] { width: 100%; min-width: 0; background: var(--raised); border: 1px solid var(--line); border-radius: 7px; padding: 6px 9px; font-size: 0.92rem; }
+input[type="number"] { font-family: var(--font-data); font-variant-numeric: tabular-nums; font-size: 0.88rem; }
+.num { display: flex; align-items: center; gap: 6px; }
+.num em { font-style: normal; color: var(--muted); }
+.field .seg { align-self: flex-start; }
+.field .seg button[aria-pressed="true"] { color: var(--ink); }
+fieldset { border: 0; margin: 0; padding: 0; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.grid2 label { display: flex; flex-direction: column; gap: 3px; font-size: 0.8rem; color: var(--muted); min-width: 0; }
+.check { display: flex; align-items: center; gap: 7px; font-size: 0.86rem; color: var(--ink); cursor: pointer; }
+.check input { width: 16px; height: 16px; accent-color: var(--accent); }
+
+.stats { margin: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 12px; font-size: 0.86rem; padding: 10px 12px; border-radius: 8px; background: var(--chip); }
+.stats dt { color: var(--muted); }
+.stats dd { margin: 0; font-variant-numeric: tabular-nums; }
+.rule { margin: 0; font-size: 0.82rem; color: var(--muted); }
+
+.json-out { width: 100%; min-height: 300px; flex: 1; resize: vertical; font-family: var(--font-data); font-size: 0.76rem; line-height: 1.5; background: var(--raised); border: 1px solid var(--line); border-radius: 8px; padding: 10px; white-space: pre; overflow: auto; }
+.json-in { width: 100%; min-height: 120px; resize: vertical; font-family: var(--font-data); font-size: 0.76rem; background: var(--raised); border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
+.row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+details summary { cursor: pointer; font-weight: 600; font-size: 0.9rem; }
+details[open] summary { margin-bottom: 8px; }
+details > div { display: flex; flex-direction: column; gap: 8px; }
+code { font-family: var(--font-data); font-size: 0.84em; background: var(--chip); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+.copy-msg { color: var(--muted); font-size: 0.82rem; }
+
+body.is-readonly .needs-write { display: none; }
+
+@media (max-width: 1240px) { .kbd-hint { display: none; } }
+@media (max-width: 880px) {
+  html, body { height: auto; }
+  body { display: block; }
+  .workspace { grid-template-columns: minmax(0, 1fr); }
+  .map-col { grid-template-rows: auto auto auto; }
+  .map-wrap { height: 64vh; height: 64svh; min-height: 340px; }
+  .panel { border-left: 0; border-top: 1px solid var(--line); }
+  .panel-body { overflow: visible; }
+  .kbd-hint { display: none; }
+  .legend { left: 52px; max-width: calc(100% - 112px); }
+}
+@media (max-width: 520px) {
+  .tool-group > .label { display: none; }
+  .seg button { padding: 5px 8px; }
+  .legend { display: none; }
+}
+</style>
+</head>
+<body>
+<header class="app-header">
+  <div>
+    <h1>Nasdara Temperature Zones</h1>
+    <p>Zones for NasdaraHardcore_TemperatureZones on Hardcore Desert. Terrain sampled from the game every <span id="stepTxt">25</span> m.</p>
+  </div>
+  <span class="status" id="status" data-state="loading">Loading zones…</span>
+</header>
+
+<main class="workspace">
+  <div class="map-col">
+    <div class="toolbar" role="toolbar" aria-label="Map tools">
+      <div class="tool-group">
+        <span class="label">Tool</span>
+        <div class="seg" id="segTool">
+          <button type="button" data-v="move" aria-pressed="true" title="Move the map, select and move zones (V)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 2l9 5-4 1-1 4z"/></svg>Select</button>
+          <button type="button" data-v="rect" aria-pressed="false" class="needs-write" title="Drag to draw a rectangle (R)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="2.5" y="3.5" width="11" height="9" rx="1"/></svg>Rectangle</button>
+          <button type="button" data-v="circle" aria-pressed="false" class="needs-write" title="Drag from the centre outwards to draw a circle (C)"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/></svg>Circle</button>
+        </div>
+      </div>
+      <div class="tool-group">
+        <span class="label">Map</span>
+        <div class="seg" id="segLayer">
+          <button type="button" data-v="ground" aria-pressed="true">Ground</button>
+          <button type="button" data-v="height" aria-pressed="false">Height</button>
+        </div>
+      </div>
+      <div class="tool-group needs-write">
+        <label class="label" for="snapSel">Snap</label>
+        <select id="snapSel">
+          <option value="0">Off</option>
+          <option value="10">10 m</option>
+          <option value="50" selected>50 m</option>
+          <option value="100">100 m</option>
+          <option value="500">500 m</option>
+        </select>
+      </div>
+      <span class="kbd-hint">Scroll to zoom · drag to pan · Esc cancels</span>
+    </div>
+
+    <div class="map-wrap" id="mapWrap">
+      <svg id="map" xmlns="http://www.w3.org/2000/svg" aria-label="Map of Nasdara with temperature zones">
+        <defs></defs>
+        <rect id="mapBg" x="0" y="0" width="16384" height="16384" fill="#8f8a80"></rect>
+        <image id="base" preserveAspectRatio="none"></image>
+        <path id="grid" fill="none" stroke="var(--map-grid)" stroke-width="1" vector-effect="non-scaling-stroke"></path>
+        <path id="bld" fill="none" stroke="var(--map-bld)" stroke-width="2.4" stroke-linecap="square" vector-effect="non-scaling-stroke" pointer-events="none"></path>
+        <g id="names" class="names"></g>
+        <g id="zones"></g>
+        <g id="draft" pointer-events="none"></g>
+        <g id="handles"></g>
+      </svg>
+      <div class="axis axis-x" id="axisX" aria-hidden="true"></div>
+      <div class="axis axis-z" id="axisZ" aria-hidden="true"></div>
+      <div class="legend" id="legend"></div>
+      <div class="map-controls">
+        <button type="button" id="zoomIn" title="Zoom in (+)" aria-label="Zoom in">+</button>
+        <button type="button" id="zoomOut" title="Zoom out (−)" aria-label="Zoom out">−</button>
+        <button type="button" id="zoomFit" title="Whole map (F)" aria-label="Show the whole map"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4"/></svg></button>
+      </div>
+    </div>
+
+    <div class="readout" id="readout" aria-live="off">
+      <span class="muted">Point at the map to see coordinates, ground height and which zone applies there.</span>
+    </div>
+  </div>
+
+  <aside class="panel">
+    <div class="tabs" role="tablist">
+      <button type="button" role="tab" id="tabZonesBtn" aria-selected="true" aria-controls="tabZones">Zones<span class="count" id="zoneCount">0</span></button>
+      <button type="button" role="tab" id="tabJsonBtn" aria-selected="false" aria-controls="tabJson">config.json</button>
+    </div>
+
+    <section class="panel-body" id="tabZones" role="tabpanel" aria-labelledby="tabZonesBtn">
+      <p class="note warn" id="localNote" hidden>Zones are saved in this browser only. Copy the config.json to keep them or move them to another device.</p>
+      <p class="note warn" id="readonlyNote" hidden>You can look at these zones but not change them.</p>
+      <ol class="zone-list" id="zoneList"></ol>
+      <p class="empty" id="emptyList">Loading saved zones…</p>
+
+      <div class="editor" id="editor" hidden>
+        <div class="editor-head">
+          <h2 id="edTitle">Zone</h2>
+          <div class="actions needs-write">
+            <button type="button" class="btn" id="btnDup">Duplicate</button>
+            <button type="button" class="btn danger" id="btnDel">Delete</button>
+          </div>
+        </div>
+
+        <label class="field"><span>Name</span><input id="zName" type="text" maxlength="60" autocomplete="off" spellcheck="false"><small>Only shown in the server log.</small></label>
+
+        <div class="field"><span>Shape</span>
+          <div class="seg" id="segShape">
+            <button type="button" data-v="RECTANGLE">Rectangle</button>
+            <button type="button" data-v="RADIAL">Circle</button>
+            <button type="button" data-v="SPHERE">Ball</button>
+          </div>
+          <small id="shapeHint"></small>
+        </div>
+
+        <div class="field"><span>Mode</span>
+          <div class="seg" id="segMode">
+            <button type="button" data-v="ADD">Add to normal</button>
+            <button type="button" data-v="SET">Set exactly</button>
+          </div>
+        </div>
+
+        <label class="field"><span>Temperature</span>
+          <span class="num"><input id="zTemp" type="number" step="0.5" inputmode="decimal"><em>°C</em></span>
+          <small id="tempHint"></small>
+        </label>
+
+        <fieldset id="geoRect">
+          <legend>Edges, in metres</legend>
+          <div class="grid2">
+            <label>West (X)<input id="zX1" type="number" step="10" inputmode="numeric"></label>
+            <label>East (X)<input id="zX2" type="number" step="10" inputmode="numeric"></label>
+            <label>South (Z)<input id="zZ1" type="number" step="10" inputmode="numeric"></label>
+            <label>North (Z)<input id="zZ2" type="number" step="10" inputmode="numeric"></label>
+          </div>
+        </fieldset>
+
+        <fieldset id="geoCircle">
+          <legend>Centre and radius, in metres</legend>
+          <div class="grid2">
+            <label>Centre X<input id="zCX" type="number" step="10" inputmode="numeric"></label>
+            <label>Centre Z<input id="zCZ" type="number" step="10" inputmode="numeric"></label>
+            <label>Radius<input id="zR" type="number" step="10" min="1" inputmode="numeric"></label>
+          </div>
+        </fieldset>
+
+        <fieldset id="geoHeight">
+          <legend>Height</legend>
+          <div class="grid2">
+            <label id="rowHeight">Height band (m)<input id="zHeight" type="number" step="10" min="0" inputmode="numeric"></label>
+            <label id="rowY">Centre height Y (m)<input id="zY" type="number" step="1" inputmode="decimal"></label>
+          </div>
+          <label class="check" id="rowYAuto"><input id="zYAuto" type="checkbox"> Use the ground height at the centre</label>
+          <small id="heightHint"></small>
+        </fieldset>
+
+        <dl class="stats" id="stats"></dl>
+      </div>
+
+      <p class="rule">Where zones overlap, the one whose centre is nearest the player wins, as in the mod. The bar under the map shows which zone applies wherever you point.</p>
+    </section>
+
+    <section class="panel-body" id="tabJson" role="tabpanel" aria-labelledby="tabJsonBtn" hidden>
+      <p class="rule">Save this as <code>NasdaraHardcore_TemperatureZones/config.json</code> in the server's profile folder (<code>profiles_HardcoreDesert</code>), as UTF-8 without a BOM, then restart the server. The mod reads it once at start.</p>
+      <div class="row">
+        <button type="button" class="btn primary" id="btnCopy">Copy config.json</button>
+        <label class="check needs-write"><input type="checkbox" id="logToggle"> Log players entering and leaving zones</label>
+        <span class="copy-msg" id="copyMsg" role="status"></span>
+      </div>
+      <textarea class="json-out" id="jsonOut" readonly spellcheck="false" aria-label="config.json"></textarea>
+      <details class="needs-write">
+        <summary>Load zones from an existing config.json</summary>
+        <div>
+          <textarea class="json-in" id="jsonIn" spellcheck="false" placeholder="Paste a config.json here" aria-label="config.json to load"></textarea>
+          <div class="row">
+            <button type="button" class="btn" id="btnImport">Replace the zones with these</button>
+            <span class="copy-msg" id="importMsg" role="status"></span>
+          </div>
+        </div>
+      </details>
+    </section>
+  </aside>
+</main>
+
+<script src="terrain.js"></script>
+<script>
+"use strict";
+(function () {
+  const D = window.NASDARA_TERRAIN;
+  const WORLD = D.size, STEP = D.step, N = D.n;
+  const HELP = "Changes the temperature the player feels (heat comfort, and through it heat buffer, sweating and heatstroke) inside zones. ZoneShape: RECTANGLE (Position and Position2 are opposite corners, only X and Z count), RADIAL (circle of Radius round Position, only X and Z count) or SPHERE (ball of Radius round Position). Height above 0 limits RECTANGLE and RADIAL zones to that many metres, centred on the zone's Y. Mode ADD adds Temperature to the normal temperature, so day and night, sun, shade, wind and buildings still count; Mode SET replaces it with Temperature (TemperatureZones behaviour). Water keeps its own temperature, and a fire or other heat source still wins when it is warmer. Where zones overlap, the one whose centre is nearest wins. Log prints players entering and leaving zones. Read once at server start.";
+  // Hardcore Desert's cfggameplay temperatures: sunrise low and mid-afternoon high, every month
+  const DAY_LOW = 3.4, DAY_HIGH = 44.4;
+  const SVGNS = "http://www.w3.org/2000/svg";
+  const $ = (s) => document.querySelector(s);
+  const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+
+  function bytes(s) { const bin = atob(s); const a = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i); return a; }
+  const HGT = new Int16Array(bytes(D.hgt).buffer); // decimetres, row 0 = north
+  const SRF = bytes(D.srf);                        // index into D.surfaces, 255 = water
+  const BLD = new Uint16Array(bytes(D.bld).buffer); // x, z pairs in metres
+
+  // ---------- Terrain ----------
+  const CLASSES = {
+    sand: { label: "Sand", rgb: [228, 198, 122] },
+    desert: { label: "Desert", rgb: [238, 222, 178] },
+    drygrass: { label: "Dry grass", rgb: [196, 190, 130] },
+    greengrass: { label: "Green grass", rgb: [146, 174, 96] },
+    soil: { label: "Soil", rgb: [186, 160, 120] },
+    stony: { label: "Stony ground", rgb: [168, 162, 150] },
+    forest: { label: "Pine forest", rgb: [88, 122, 68] },
+    mud: { label: "Mud", rgb: [138, 120, 88] },
+    lake: { label: "Lake bed", rgb: [186, 194, 172] },
+    water: { label: "Water", rgb: [104, 156, 200] },
+    road: { label: "Road", rgb: [96, 92, 86] },
+    oil: { label: "Oil field", rgb: [70, 70, 70] },
+    built: { label: "Built-up", rgb: [150, 146, 140] }
+  };
+  function classify(name) {
+    if (name.includes("nasdara_sand")) return "sand";
+    if (name.includes("nasdara_desert")) return "desert";
+    if (name.includes("grass_dry")) return "drygrass";
+    if (name.includes("grass_green")) return "greengrass";
+    if (name.includes("nasdara_soil") || name === "dirt_ext") return "soil";
+    if (name.includes("stony") || name === "stone_ext") return "stony";
+    if (name.includes("forest")) return "forest";
+    if (name.includes("mud")) return "mud";
+    if (name.includes("nasdara_lake")) return "lake";
+    if (name.includes("asphalt")) return "road";
+    if (name.includes("oil")) return "oil";
+    return "built";
+  }
+  const SRF_CLASS = D.surfaces.map(classify);
+  const classAtIndex = (i) => SRF[i] === 255 ? "water" : (SRF_CLASS[SRF[i]] || "built");
+  function cellIndex(x, z) {
+    const c = Math.round(x / STEP), r = (N - 1) - Math.round(z / STEP);
+    if (c < 0 || c >= N || r < 0 || r >= N) return -1;
+    return r * N + c;
+  }
+  const hAt = (r, c) => HGT[r * N + c] / 10;
+  function groundAt(x, z) {
+    const fx = clamp(x / STEP, 0, N - 1), fz = clamp(z / STEP, 0, N - 1);
+    const c0 = Math.floor(fx), z0 = Math.floor(fz), c1 = Math.min(c0 + 1, N - 1), z1 = Math.min(z0 + 1, N - 1);
+    const tx = fx - c0, tz = fz - z0;
+    const h = (c, zi) => hAt((N - 1) - zi, c);
+    return (h(c0, z0) * (1 - tx) + h(c1, z0) * tx) * (1 - tz) + (h(c0, z1) * (1 - tx) + h(c1, z1) * tx) * tz;
+  }
+  let H_MIN = Infinity, H_MAX = -Infinity;
+  for (let i = 0; i < HGT.length; i++) { if (SRF[i] === 255) continue; const h = HGT[i] / 10; if (h < H_MIN) H_MIN = h; if (h > H_MAX) H_MAX = h; }
+
+  const RAMP = [[0, [106, 146, 104]], [0.18, [168, 180, 116]], [0.38, [218, 200, 142]], [0.6, [196, 156, 106]], [0.82, [150, 112, 84]], [1, [238, 234, 228]]];
+  function ramp(t) {
+    t = clamp(t, 0, 1);
+    for (let i = 1; i < RAMP.length; i++) {
+      if (t <= RAMP[i][0]) {
+        const a = RAMP[i - 1], b = RAMP[i], u = (t - a[0]) / (b[0] - a[0]);
+        return [0, 1, 2].map((j) => a[1][j] + (b[1][j] - a[1][j]) * u);
+      }
+    }
+    return RAMP[RAMP.length - 1][1];
+  }
+
+  const baseCache = {};
+  function baseImage(mode) {
+    if (baseCache[mode]) return baseCache[mode];
+    const cv = document.createElement("canvas"); cv.width = N; cv.height = N;
+    const ctx = cv.getContext("2d"), img = ctx.createImageData(N, N), px = img.data;
+    const alt = 45 * Math.PI / 180, lx = -0.7071 * Math.cos(alt), ly = 0.7071 * Math.cos(alt), lz = Math.sin(alt), ex = 2.5;
+    for (let r = 0; r < N; r++) {
+      const r0 = Math.max(r - 1, 0), r1 = Math.min(r + 1, N - 1);
+      for (let c = 0; c < N; c++) {
+        const c0 = Math.max(c - 1, 0), c1 = Math.min(c + 1, N - 1), i = r * N + c;
+        const dzdx = (hAt(r, c1) - hAt(r, c0)) / ((c1 - c0) * STEP) * ex;
+        const dzdy = (hAt(r0, c) - hAt(r1, c)) / ((r1 - r0) * STEP) * ex;
+        const len = Math.sqrt(dzdx * dzdx + dzdy * dzdy + 1);
+        const shade = Math.max(0, (-dzdx * lx - dzdy * ly + lz) / len);
+        const cls = classAtIndex(i);
+        let rgb;
+        if (cls === "water") rgb = CLASSES.water.rgb;
+        else if (mode === "height") rgb = ramp((hAt(r, c) - H_MIN) / (H_MAX - H_MIN));
+        else rgb = CLASSES[cls].rgb;
+        const f = cls === "water" ? 1 : 0.6 + 0.57 * shade;
+        px[i * 4] = Math.min(255, rgb[0] * f); px[i * 4 + 1] = Math.min(255, rgb[1] * f); px[i * 4 + 2] = Math.min(255, rgb[2] * f); px[i * 4 + 3] = 255;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    baseCache[mode] = cv.toDataURL();
+    return baseCache[mode];
+  }
+
+  // ---------- Zone model (same fields as the mod's config.json) ----------
+  const SHAPES = { RECTANGLE: "Rectangle", RADIAL: "Circle", SPHERE: "Ball" };
+  const isRect = (z) => z.ZoneShape === "RECTANGLE";
+  const round1 = (n) => Math.round(n * 10) / 10;
+  const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
+  const vec3 = (v) => Array.isArray(v) ? [num(v[0]), num(v[1]), num(v[2])] : [0, 0, 0];
+
+  function centre(z) {
+    if (isRect(z)) return { x: (z.Position[0] + z.Position2[0]) / 2, z: (z.Position[2] + z.Position2[2]) / 2 };
+    return { x: z.Position[0], z: z.Position[2] };
+  }
+  function bounds(z) {
+    if (isRect(z)) return { x1: Math.min(z.Position[0], z.Position2[0]), x2: Math.max(z.Position[0], z.Position2[0]), z1: Math.min(z.Position[2], z.Position2[2]), z2: Math.max(z.Position[2], z.Position2[2]) };
+    return { x1: z.Position[0] - z.Radius, x2: z.Position[0] + z.Radius, z1: z.Position[2] - z.Radius, z2: z.Position[2] + z.Radius };
+  }
+  const needsY = (z) => z.ZoneShape === "SPHERE" || z.Height > 0;
+  function zoneY(z) { return isRect(z) ? (z.Position[1] + z.Position2[1]) / 2 : z.Position[1]; }
+  function setY(z, y) { z.Position[1] = y; if (isRect(z)) z.Position2[1] = y; }
+  function updateY(z) {
+    if (!needsY(z)) { setY(z, 0); return; }
+    if (z.YAuto) { const c = centre(z); setY(z, round1(groundAt(c.x, c.z))); }
+  }
+  // Rectangles are kept as south-west corner (Position) and north-east corner (Position2)
+  function normaliseRect(z) {
+    const x1 = Math.min(z.Position[0], z.Position2[0]), x2 = Math.max(z.Position[0], z.Position2[0]);
+    const z1 = Math.min(z.Position[2], z.Position2[2]), z2 = Math.max(z.Position[2], z.Position2[2]);
+    z.Position = [x1, z.Position[1], z1]; z.Position2 = [x2, z.Position2[1], z2];
+  }
+
+  // Mirrors NHTZ_TemperatureZones.ValidateZone: an empty string means the zone loads
+  function problemWith(z) {
+    if (z.Mode !== "SET" && z.Mode !== "ADD") return "Mode must be ADD or SET";
+    if (z.ZoneShape === "RECTANGLE") {
+      if (z.Position2[0] === 0 && z.Position2[2] === 0) return "a RECTANGLE needs Position2 (the opposite corner)";
+      if (z.Position[0] === z.Position2[0] || z.Position[2] === z.Position2[2]) return "Position2 must differ from Position in both X and Z";
+      return "";
+    }
+    if (z.ZoneShape === "SPHERE" || z.ZoneShape === "RADIAL") return z.Radius > 0 ? "" : "a " + z.ZoneShape + " needs a Radius above 0";
+    return "ZoneShape must be RECTANGLE, RADIAL or SPHERE";
+  }
+
+  function fromRecord(id, r, index) {
+    if (!r || typeof r !== "object") return null;
+    const z = {
+      id: id,
+      Name: String(r.Name == null ? "" : r.Name),
+      ZoneShape: String(r.ZoneShape || "").toUpperCase() || "SPHERE",
+      Mode: String(r.Mode || "").toUpperCase() || "SET",
+      Temperature: num(r.Temperature),
+      Position: vec3(r.Position),
+      Position2: vec3(r.Position2),
+      Radius: num(r.Radius),
+      Height: Math.max(0, num(r.Height)),
+      YAuto: !!r.YAuto,
+      Created: num(r.Created)
+    };
+    if (!z.Name) z.Name = "Zone" + ((index || 0) + 1);
+    if (isRect(z)) normaliseRect(z); else z.Position2 = [0, 0, 0];
+    return z;
+  }
+  function toRecord(z) {
+    return { Name: z.Name, ZoneShape: z.ZoneShape, Mode: z.Mode, Temperature: z.Temperature, Position: z.Position.slice(), Position2: z.Position2.slice(), Radius: z.Radius, Height: z.Height, YAuto: !!z.YAuto, Created: z.Created };
+  }
+  const clone = (z) => Object.assign({}, z, { Position: z.Position.slice(), Position2: z.Position2.slice() });
+
+  // Mirrors NHTZ_TemperatureZones.FindZone: inside, and nearest centre wins
+  function insideDistSq(z, x, y, zz) {
+    let dx, dz;
+    if (isRect(z)) {
+      const b = bounds(z);
+      if (x < b.x1 || x > b.x2 || zz < b.z1 || zz > b.z2) return -1;
+      if (z.Height > 0 && Math.abs(y - zoneY(z)) > z.Height / 2) return -1;
+      dx = x - (b.x1 + b.x2) / 2; dz = zz - (b.z1 + b.z2) / 2;
+      return dx * dx + dz * dz;
+    }
+    if (z.ZoneShape === "RADIAL") {
+      dx = x - z.Position[0]; dz = zz - z.Position[2];
+      const d = dx * dx + dz * dz;
+      if (d > z.Radius * z.Radius) return -1;
+      if (z.Height > 0 && Math.abs(y - z.Position[1]) > z.Height / 2) return -1;
+      return d;
+    }
+    dx = x - z.Position[0]; dz = zz - z.Position[2]; const dy = y - z.Position[1];
+    const d3 = dx * dx + dy * dy + dz * dz;
+    return d3 <= z.Radius * z.Radius ? d3 : -1;
+  }
+  function findZone(x, y, zz) {
+    let best = null, bestD = Infinity;
+    for (const z of ordered()) { if (problemWith(z)) continue; const d = insideDistSq(z, x, y, zz); if (d >= 0 && d < bestD) { best = z; bestD = d; } }
+    return best;
+  }
+
+  const fmtT = (t) => (Math.round(t * 10) / 10).toString().replace("-", "−");
+  function tempText(z) {
+    if (z.Mode === "SET") return fmtT(z.Temperature) + " °C set";
+    return (z.Temperature >= 0 ? "+" : "") + fmtT(z.Temperature) + " °C";
+  }
+  // Heat comfort is neutral at 24 °C, so a SET zone is coloured by how far it sits from that
+  function zoneColour(z) {
+    const d = z.Mode === "SET" ? z.Temperature - 24 : z.Temperature;
+    const NEU = [128, 130, 122], HOT = [206, 54, 28], COLD = [32, 98, 184];
+    if (d === 0) return NEU;
+    const t = 0.35 + 0.65 * Math.min(1, Math.abs(d) / 12), to = d > 0 ? HOT : COLD;
+    return [0, 1, 2].map((j) => Math.round(NEU[j] + (to[j] - NEU[j]) * t));
+  }
+  const rgb = (c, a) => a == null ? `rgb(${c[0]},${c[1]},${c[2]})` : `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+  const darker = (c) => c.map((v) => Math.round(v * 0.62));
+
+  // ---------- State ----------
+  let zones = new Map();
+  let selectedId = null;
+  let loaded = false;
+  let readOnly = false;
+  let logOn = false;
+  let tool = "move";
+  let layer = "ground";
+  let snapStep = 50;
+  let store = null; // { kind: "db", col, settings } or { kind: "local" }
+
+  function ordered() { return Array.from(zones.values()).sort((a, b) => (a.Created - b.Created) || (a.id < b.id ? -1 : 1)); }
+  const prefs = {
+    get(k, d) { try { const v = localStorage.getItem("nhtz-zone-map:" + k); return v == null ? d : v; } catch (e) { return d; } },
+    set(k, v) { try { localStorage.setItem("nhtz-zone-map:" + k, v); } catch (e) { /* storage blocked: keep going */ } }
+  };
+
+  // ---------- Saving ----------
+  const pending = new Map(); // id -> { timer, inflight, again }
+  let inflightCount = 0;
+  function setStatus(state, text) {
+    const el = $("#status");
+    const labels = { loading: "Loading zones…", saved: "Saved", saving: "Saving…", local: "Saved in this browser only", readonly: "View only", error: "Not saved" };
+    el.dataset.state = state; el.textContent = text || labels[state];
+  }
+  function commit(id, delay) {
+    if (readOnly) return;
+    if (!store || store.kind === "local") { saveLocal(); return; }
+    let p = pending.get(id);
+    if (!p) { p = { timer: 0, inflight: false, again: false }; pending.set(id, p); }
+    clearTimeout(p.timer);
+    setStatus("saving");
+    p.timer = setTimeout(() => flush(id), delay || 0);
+  }
+  async function flush(id) {
+    const p = pending.get(id); if (!p) return;
+    if (p.inflight) { p.again = true; return; }
+    p.inflight = true; inflightCount++;
+    const z = zones.get(id);
+    try {
+      if (z) await store.col.doc(id).set(toRecord(z)); else await store.col.doc(id).delete();
+    } catch (e) {
+      if (e && e.code === "unavailable") {
+        await new Promise((res) => setTimeout(res, 800 + Math.random() * 800));
+        try { const z2 = zones.get(id); if (z2) await store.col.doc(id).set(toRecord(z2)); else await store.col.doc(id).delete(); }
+        catch (e2) { onWriteError(e2); }
+      } else onWriteError(e);
+    } finally {
+      p.inflight = false; inflightCount--;
+      if (p.again) { p.again = false; flush(id); }
+      else { pending.delete(id); if (!inflightCount && !pending.size && !readOnly && $("#status").dataset.state === "saving") setStatus("saved"); }
+    }
+  }
+  function onWriteError(e) {
+    const code = e && e.code;
+    if (code === "invalid_argument" || code === "not_granted") { setReadOnly(); }
+    else if (code === "quota_exceeded") setStatus("error", "Not saved: storage full");
+    else setStatus("error", "Not saved: check your connection");
+  }
+  function setReadOnly() {
+    readOnly = true; document.body.classList.add("is-readonly"); setTool("move");
+    $("#readonlyNote").hidden = false; setStatus("readonly");
+    document.querySelectorAll("#editor input, #editor button").forEach((el) => { el.disabled = true; });
+  }
+  function saveLocal() {
+    try { localStorage.setItem("nhtz-zone-map:zones", JSON.stringify(ordered().map((z) => Object.assign({ id: z.id }, toRecord(z))))); localStorage.setItem("nhtz-zone-map:log", logOn ? "1" : "0"); setStatus("local"); }
+    catch (e) { setStatus("error", "Not saved: copy the config.json"); }
+  }
+  function useLocal() {
+    store = { kind: "local" };
+    $("#localNote").hidden = false;
+    try {
+      const raw = JSON.parse(localStorage.getItem("nhtz-zone-map:zones") || "[]");
+      raw.forEach((r, i) => { const z = fromRecord(r.id || newId(), r, i); if (z) zones.set(z.id, z); });
+      logOn = localStorage.getItem("nhtz-zone-map:log") === "1";
+    } catch (e) { /* nothing saved yet */ }
+    loaded = true; setStatus("local"); renderAll();
+  }
+  function newId() {
+    if (store && store.kind === "db") return store.col.doc().id;
+    return "z" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  }
+
+  async function initStore() {
+    let db = null;
+    try { if (window.claude && typeof window.claude.use === "function") db = await window.claude.use("db"); } catch (e) { db = null; }
+    if (!db) { useLocal(); return; }
+    store = { kind: "db", col: db.collection("zones"), settings: db.doc("settings/main") };
+    store.col.onSnapshot((snap) => {
+      const next = new Map();
+      snap.docs.forEach((d, i) => { const z = fromRecord(d.id, d.data(), i); if (z) next.set(d.id, z); });
+      // Keep what this page is still writing or dragging
+      for (const id of pending.keys()) { if (zones.has(id)) next.set(id, zones.get(id)); else next.delete(id); }
+      if (gesture && gesture.id && zones.has(gesture.id)) next.set(gesture.id, zones.get(gesture.id));
+      zones = next; loaded = true;
+      if (selectedId && !zones.has(selectedId)) selectedId = null;
+      if (!pending.size && !readOnly) setStatus("saved");
+      renderAll();
+    }, (e) => { setStatus("error", e && e.code === "revoked" ? "Not available" : "Not saved: lost connection"); });
+    store.settings.onSnapshot((s) => {
+      const d = s.exists ? s.data() : null; logOn = !!(d && d.Log); $("#logToggle").checked = logOn; renderJson();
+    }, () => {});
+  }
+
+  // ---------- View ----------
+  const svg = $("#map"), wrap = $("#mapWrap");
+  const view = { x: WORLD / 2, y: WORLD / 2, k: 0.05 };
+  let vw = 1, vh = 1, vb = { x0: 0, y0: 0, w: WORLD, h: WORLD };
+  const K_MAX = 2;
+  const fitK = () => Math.min(vw / (WORLD + 900), vh / (WORLD + 900));
+  let frame = 0;
+  function requestView() { if (!frame) frame = requestAnimationFrame(() => { frame = 0; applyView(); }); }
+  function applyView() {
+    view.k = clamp(view.k, fitK() * 0.6, K_MAX);
+    view.x = clamp(view.x, 0, WORLD); view.y = clamp(view.y, 0, WORLD);
+    const w = vw / view.k, h = vh / view.k;
+    vb = { x0: view.x - w / 2, y0: view.y - h / 2, w: w, h: h };
+    svg.setAttribute("viewBox", `${vb.x0} ${vb.y0} ${w} ${h}`);
+    const namesG = $("#names");
+    namesG.setAttribute("font-size", (12.5 / view.k).toFixed(3));
+    namesG.setAttribute("stroke-width", (3 / view.k).toFixed(3));
+    namesG.classList.toggle("show-village", view.k > fitK() * 1.35);
+    namesG.classList.toggle("show-minor", view.k > fitK() * 2.4);
+    renderGrid(); renderZones(); renderDraft();
+  }
+  function fitAll() { view.k = fitK(); view.x = WORLD / 2 + 150; view.y = WORLD / 2 + 150; requestView(); }
+  function zoomBy(f, sx, sy) {
+    if (sx == null) { sx = vw / 2; sy = vh / 2; }
+    const wx = vb.x0 + sx / view.k, wy = vb.y0 + sy / view.k;
+    const k2 = clamp(view.k * f, fitK() * 0.6, K_MAX);
+    view.x = wx - (sx - vw / 2) / k2; view.y = wy - (sy - vh / 2) / k2; view.k = k2;
+    requestView();
+  }
+  function showZone(z) {
+    const b = bounds(z), pad = 1.35;
+    const k = Math.min(vw / ((b.x2 - b.x1) * pad + 200), vh / ((b.z2 - b.z1) * pad + 200));
+    view.k = Math.min(view.k, k) < fitK() ? fitK() : Math.min(Math.max(view.k, fitK()), k);
+    view.x = (b.x1 + b.x2) / 2; view.y = WORLD - (b.z1 + b.z2) / 2;
+    requestView();
+  }
+  const ro = new ResizeObserver(() => {
+    const first = vw === 1;
+    vw = Math.max(1, wrap.clientWidth); vh = Math.max(1, wrap.clientHeight);
+    if (first) fitAll(); else requestView();
+  });
+  ro.observe(wrap);
+
+  function el(name, attrs, parent) {
+    const e = document.createElementNS(SVGNS, name);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(e);
+    return e;
+  }
+
+  function renderGrid() {
+    const steps = [100, 200, 500, 1000, 2000, 4000];
+    let step = steps[steps.length - 1];
+    for (const s of steps) { if (s * view.k >= 64) { step = s; break; } }
+    let d = "";
+    const x0 = Math.max(0, Math.ceil(vb.x0 / step) * step), x1 = Math.min(WORLD, vb.x0 + vb.w);
+    const y0 = Math.max(0, vb.y0), y1 = Math.min(WORLD, vb.y0 + vb.h);
+    for (let x = x0; x <= x1; x += step) d += `M${x} ${y0}V${y1}`;
+    const zTop = WORLD - y0, zBot = WORLD - y1;
+    for (let z = Math.max(0, Math.ceil(zBot / step) * step); z <= Math.min(WORLD, zTop); z += step) d += `M${Math.max(0, vb.x0)} ${WORLD - z}H${Math.min(WORLD, vb.x0 + vb.w)}`;
+    $("#grid").setAttribute("d", d);
+    // Axis labels in metres, as in config.json
+    const ax = $("#axisX"), az = $("#axisZ");
+    let hx = "", hz = "";
+    const lstep = step * view.k < 80 ? step * 2 : step;
+    for (let x = Math.ceil(vb.x0 / lstep) * lstep; x <= vb.x0 + vb.w; x += lstep) {
+      if (x < 0 || x > WORLD) continue;
+      const sx = (x - vb.x0) * view.k; if (sx < 60) continue;
+      hx += `<span style="left:${sx.toFixed(1)}px">${x}</span>`;
+    }
+    for (let z = Math.ceil((WORLD - (vb.y0 + vb.h)) / step) * step; z <= WORLD - vb.y0; z += step) {
+      if (z < 0 || z > WORLD) continue;
+      const sy = (WORLD - z - vb.y0) * view.k - 18; if (sy < 10) continue;
+      hz += `<span style="top:${sy.toFixed(1)}px">${z}</span>`;
+    }
+    ax.innerHTML = hx; az.innerHTML = hz;
+  }
+
+  function renderNames() {
+    const g = $("#names");
+    const city = new Set(["Capital", "City"]), village = new Set(["Village"]);
+    for (const [type, x, z, name] of D.names) {
+      const cls = city.has(type) ? "n-city" : village.has(type) ? "n-village" : "n-minor";
+      const t = el("text", { x: x, y: WORLD - z, class: cls }, g);
+      t.textContent = name;
+    }
+  }
+  function renderBuildings() {
+    let d = "";
+    for (let i = 0; i < BLD.length; i += 2) d += `M${BLD[i]} ${WORLD - BLD[i + 1]}h.5`;
+    $("#bld").setAttribute("d", d);
+  }
+  function setLayer(m) {
+    layer = m; prefs.set("layer", m);
+    const img = $("#base");
+    img.setAttribute("href", baseImage(m));
+    img.setAttribute("x", -STEP / 2); img.setAttribute("y", WORLD - (N - 1) * STEP - STEP / 2);
+    img.setAttribute("width", N * STEP); img.setAttribute("height", N * STEP);
+    document.querySelectorAll("#segLayer button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.v === m)));
+    renderLegend();
+  }
+  function renderLegend() {
+    const lg = $("#legend");
+    if (layer === "height") {
+      const stops = RAMP.map(([t, c]) => `${rgb(c)} ${(t * 100).toFixed(0)}%`).join(",");
+      lg.innerHTML = `<div class="ramp"><span>${Math.round(H_MIN)} m</span><b style="background:linear-gradient(90deg,${stops})"></b><span>${Math.round(H_MAX)} m</span></div>`;
+      return;
+    }
+    const keys = ["sand", "desert", "drygrass", "greengrass", "soil", "stony", "forest", "lake", "water", "road", "built"];
+    lg.innerHTML = "<ul>" + keys.map((k) => `<li><i style="background:${rgb(CLASSES[k].rgb)}"></i>${CLASSES[k].label}</li>`).join("") + `<li><i style="background:var(--map-bld)"></i>Buildings</li></ul>`;
+  }
+
+  // ---------- Zones on the map ----------
+  function renderZones() {
+    const g = $("#zones"); g.textContent = "";
+    const k = view.k;
+    for (const z of ordered()) {
+      const col = zoneColour(z), sel = z.id === selectedId;
+      const grp = el("g", { "data-zone": z.id }, g);
+      const attrs = { fill: rgb(col, sel ? 0.3 : 0.2), stroke: rgb(col), "stroke-width": sel ? 3 : 2, "vector-effect": "non-scaling-stroke" };
+      if (z.Mode === "SET") attrs["stroke-dasharray"] = `${(9 / k).toFixed(2)} ${(6 / k).toFixed(2)}`;
+      const b = bounds(z);
+      if (isRect(z)) el("rect", Object.assign({ x: b.x1, y: WORLD - b.z2, width: b.x2 - b.x1, height: b.z2 - b.z1 }, attrs), grp);
+      else el("circle", Object.assign({ cx: z.Position[0], cy: WORLD - z.Position[2], r: Math.max(z.Radius, 0.1) }, attrs), grp);
+      const wPx = (b.x2 - b.x1) * k, hPx = (b.z2 - b.z1) * k;
+      if (wPx > 56 && hPx > 30) {
+        const c = centre(z);
+        const fs = Math.min(13, Math.max(9, wPx / 9));
+        const t = el("text", { x: c.x, y: WORLD - c.z, class: "zone-label", "font-size": (fs / k).toFixed(3), "stroke-width": (3 / k).toFixed(3), fill: rgb(darker(col)) }, grp);
+        const t1 = el("tspan", { x: c.x, dy: "-0.55em", class: "zl-name" }, t); t1.textContent = z.Name;
+        const t2 = el("tspan", { x: c.x, dy: "1.25em", class: "zl-temp" }, t); t2.textContent = tempText(z);
+      }
+    }
+    renderHandles();
+  }
+  function renderHandles() {
+    const g = $("#handles"); g.textContent = "";
+    const z = zones.get(selectedId);
+    if (!z || readOnly || tool !== "move") return;
+    const r = 6.5 / view.k, col = rgb(zoneColour(z));
+    const put = (name, x, zz) => el("circle", { cx: x, cy: WORLD - zz, r: r, fill: "#fff", stroke: col, "stroke-width": 2.5, "vector-effect": "non-scaling-stroke", "data-handle": name }, g);
+    if (isRect(z)) {
+      const b = bounds(z);
+      put("sw", b.x1, b.z1); put("se", b.x2, b.z1); put("nw", b.x1, b.z2); put("ne", b.x2, b.z2);
+    } else {
+      put("r", z.Position[0] + z.Radius, z.Position[2]);
+    }
+  }
+
+  function renderDraft() {
+    const g = $("#draft"); g.textContent = "";
+    if (!gesture || gesture.type !== "draw") return;
+    const k = view.k, a = gesture.a, b = gesture.b;
+    const attrs = { fill: "rgba(206,54,28,0.12)", stroke: "rgb(206,54,28)", "stroke-width": 2, "stroke-dasharray": `${(6 / k).toFixed(2)} ${(4 / k).toFixed(2)}`, "vector-effect": "non-scaling-stroke" };
+    let label = "", lx = b.x, lz = b.z;
+    if (gesture.shape === "rect") {
+      const x1 = Math.min(a.x, b.x), x2 = Math.max(a.x, b.x), z1 = Math.min(a.z, b.z), z2 = Math.max(a.z, b.z);
+      el("rect", Object.assign({ x: x1, y: WORLD - z2, width: x2 - x1, height: z2 - z1 }, attrs), g);
+      label = `${km(x2 - x1)} × ${km(z2 - z1)}`;
+    } else {
+      const r = Math.hypot(b.x - a.x, b.z - a.z);
+      el("circle", Object.assign({ cx: a.x, cy: WORLD - a.z, r: Math.max(r, 0.1) }, attrs), g);
+      el("line", { x1: a.x, y1: WORLD - a.z, x2: b.x, y2: WORLD - b.z, stroke: "rgb(206,54,28)", "stroke-width": 1.5, "vector-effect": "non-scaling-stroke" }, g);
+      label = `radius ${km(r)}`;
+    }
+    const t = el("text", { x: lx + 10 / k, y: WORLD - lz - 10 / k, "font-size": (13 / k).toFixed(3), "stroke-width": (3 / k).toFixed(3), class: "zone-label", fill: "rgb(120,32,16)", "text-anchor": "start" }, g);
+    t.textContent = label;
+  }
+  const km = (m) => m >= 1000 ? (m / 1000).toFixed(m >= 10000 ? 1 : 2).replace(/\.?0+$/, "") + " km" : Math.round(m) + " m";
+
+  // ---------- Pointer gestures ----------
+  let gesture = null, pinch = null;
+  const pointers = new Map();
+  const snap = (v) => snapStep > 0 ? Math.round(v / snapStep) * snapStep : Math.round(v);
+  function toWorld(e) {
+    const r = svg.getBoundingClientRect();
+    const sx = e.clientX - r.left, sy = e.clientY - r.top;
+    const x = vb.x0 + sx / view.k, y = vb.y0 + sy / view.k;
+    return { sx: sx, sy: sy, x: x, z: WORLD - y };
+  }
+  svg.addEventListener("pointerdown", (e) => {
+    if (e.pointerType === "mouse" && e.button !== 0 && e.button !== 1) return;
+    svg.setPointerCapture(e.pointerId);
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pointers.size === 2) { cancelGesture(); startPinch(); return; }
+    if (pointers.size > 2) return;
+    const w = toWorld(e);
+    if (e.button === 1) { gesture = { type: "pan", sx: w.sx, sy: w.sy, vx: view.x, vy: view.y, moved: false }; return; }
+    if (tool !== "move" && !readOnly) {
+      const p = { x: clamp(snap(w.x), 0, WORLD), z: clamp(snap(w.z), 0, WORLD) };
+      gesture = { type: "draw", shape: tool, a: p, b: p, sx: w.sx, sy: w.sy, moved: false };
+      renderDraft(); return;
+    }
+    const h = e.target.closest && e.target.closest("[data-handle]");
+    if (h && selectedId && !readOnly) {
+      gesture = { type: "resize", id: selectedId, handle: h.dataset.handle, orig: clone(zones.get(selectedId)), sx: w.sx, sy: w.sy, moved: false };
+      return;
+    }
+    const zg = e.target.closest && e.target.closest("[data-zone]");
+    if (zg) {
+      const id = zg.getAttribute("data-zone");
+      if (id !== selectedId) select(id);
+      if (!readOnly) { gesture = { type: "move", id: id, orig: clone(zones.get(id)), wx: w.x, wz: w.z, sx: w.sx, sy: w.sy, moved: false }; return; }
+    }
+    gesture = { type: "pan", sx: w.sx, sy: w.sy, vx: view.x, vy: view.y, moved: false };
+    svg.classList.add("is-panning");
+  });
+  svg.addEventListener("pointermove", (e) => {
+    if (pointers.has(e.pointerId)) pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const w = toWorld(e);
+    showReadout(w.x, w.z);
+    if (pinch) { updatePinch(); return; }
+    if (!gesture) return;
+    if (Math.hypot(w.sx - gesture.sx, w.sy - gesture.sy) > 3) gesture.moved = true;
+    if (!gesture.moved) return;
+    if (gesture.type === "pan") {
+      view.x = gesture.vx - (w.sx - gesture.sx) / view.k; view.y = gesture.vy - (w.sy - gesture.sy) / view.k; requestView();
+    } else if (gesture.type === "draw") {
+      gesture.b = { x: clamp(snap(w.x), 0, WORLD), z: clamp(snap(w.z), 0, WORLD) }; renderDraft();
+    } else if (gesture.type === "move") {
+      const z = zones.get(gesture.id), o = gesture.orig; if (!z) return;
+      const dx = snap(o.Position[0] + (w.x - gesture.wx)) - o.Position[0];
+      const dz = snap(o.Position[2] + (w.z - gesture.wz)) - o.Position[2];
+      z.Position = [o.Position[0] + dx, o.Position[1], o.Position[2] + dz];
+      if (isRect(z)) z.Position2 = [o.Position2[0] + dx, o.Position2[1], o.Position2[2] + dz];
+      renderZones(); syncEditor(false);
+    } else if (gesture.type === "resize") {
+      const z = zones.get(gesture.id), o = gesture.orig; if (!z) return;
+      const px = clamp(snap(w.x), 0, WORLD), pz = clamp(snap(w.z), 0, WORLD);
+      if (gesture.handle === "r") {
+        z.Radius = Math.max(snapStep || 1, snap(Math.hypot(w.x - z.Position[0], w.z - z.Position[2])));
+      } else {
+        const b = bounds(o);
+        let x1 = b.x1, x2 = b.x2, z1 = b.z1, z2 = b.z2;
+        if (gesture.handle.includes("w")) x1 = px; else x2 = px;
+        if (gesture.handle.includes("s")) z1 = pz; else z2 = pz;
+        if (x1 === x2 || z1 === z2) return;
+        z.Position = [Math.min(x1, x2), o.Position[1], Math.min(z1, z2)];
+        z.Position2 = [Math.max(x1, x2), o.Position2[1], Math.max(z1, z2)];
+      }
+      renderZones(); syncEditor(false);
+    }
+  });
+  function endPointer(e, cancelled) {
+    pointers.delete(e.pointerId);
+    if (pinch) { if (pointers.size < 2) pinch = null; return; }
+    if (!gesture) return;
+    const g = gesture; gesture = null; svg.classList.remove("is-panning");
+    if (cancelled) { revert(g); return; }
+    if (g.type === "pan") { if (!g.moved) select(null); return; }
+    if (g.type === "draw") {
+      renderDraft();
+      if (g.moved) createFromDraft(g);
+      return;
+    }
+    if ((g.type === "move" || g.type === "resize") && g.moved) {
+      const z = zones.get(g.id); if (!z) return;
+      updateY(z); renderAll(); commit(z.id);
+    }
+  }
+  svg.addEventListener("pointerup", (e) => endPointer(e, false));
+  svg.addEventListener("pointercancel", (e) => endPointer(e, true));
+  function revert(g) {
+    if ((g.type === "move" || g.type === "resize") && zones.has(g.id)) { zones.set(g.id, g.orig); }
+    renderAll();
+  }
+  function cancelGesture() { if (gesture) { const g = gesture; gesture = null; svg.classList.remove("is-panning"); revert(g); } }
+  function startPinch() {
+    const [p1, p2] = Array.from(pointers.values());
+    const r = svg.getBoundingClientRect();
+    const mx = (p1.x + p2.x) / 2 - r.left, my = (p1.y + p2.y) / 2 - r.top;
+    pinch = { d: Math.hypot(p1.x - p2.x, p1.y - p2.y) || 1, k: view.k, wx: vb.x0 + mx / view.k, wy: vb.y0 + my / view.k };
+  }
+  function updatePinch() {
+    const [p1, p2] = Array.from(pointers.values()); if (!p2) return;
+    const r = svg.getBoundingClientRect();
+    const mx = (p1.x + p2.x) / 2 - r.left, my = (p1.y + p2.y) / 2 - r.top;
+    const k2 = clamp(pinch.k * Math.hypot(p1.x - p2.x, p1.y - p2.y) / pinch.d, fitK() * 0.6, K_MAX);
+    view.k = k2; view.x = pinch.wx - (mx - vw / 2) / k2; view.y = pinch.wy - (my - vh / 2) / k2;
+    requestView();
+  }
+  svg.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    const r = svg.getBoundingClientRect();
+    const dy = e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY;
+    zoomBy(Math.exp(-dy * 0.0016), e.clientX - r.left, e.clientY - r.top);
+  }, { passive: false });
+  svg.addEventListener("pointerleave", () => { if (!gesture) showReadout(null); });
+
+  function nextName() {
+    let n = zones.size + 1;
+    const names = new Set(Array.from(zones.values()).map((z) => z.Name));
+    while (names.has("Zone" + n)) n++;
+    return "Zone" + n;
+  }
+  function createFromDraft(g) {
+    const a = g.a, b = g.b;
+    let z;
+    if (g.shape === "rect") {
+      if (a.x === b.x || a.z === b.z) return;
+      z = { ZoneShape: "RECTANGLE", Position: [Math.min(a.x, b.x), 0, Math.min(a.z, b.z)], Position2: [Math.max(a.x, b.x), 0, Math.max(a.z, b.z)], Radius: 0 };
+    } else {
+      const r = snap(Math.hypot(b.x - a.x, b.z - a.z));
+      if (r <= 0) return;
+      z = { ZoneShape: "RADIAL", Position: [a.x, 0, a.z], Position2: [0, 0, 0], Radius: r };
+    }
+    z = Object.assign(z, { id: newId(), Name: nextName(), Mode: "ADD", Temperature: 4, Height: 0, YAuto: true, Created: Date.now() });
+    zones.set(z.id, z);
+    setTool("move"); select(z.id); commit(z.id);
+  }
+
+  // ---------- Readout ----------
+  function showReadout(x, zz) {
+    const ro = $("#readout");
+    if (x == null || x < 0 || zz < 0 || x > WORLD || zz > WORLD) {
+      ro.innerHTML = `<span class="muted">Point at the map to see coordinates, ground height and which zone applies there.</span>`;
+      return;
+    }
+    const i = cellIndex(x, zz), cls = i >= 0 ? classAtIndex(i) : "built";
+    const y = groundAt(x, zz);
+    const z = findZone(x, y, zz);
+    const hit = z ? `<span class="zone-hit" style="color:${rgb(darker(zoneColour(z)))}">${esc(z.Name)}: ${tempText(z)}</span>` : `<span class="muted">No zone: normal temperature</span>`;
+    ro.innerHTML = `<span class="coords">X ${Math.round(x)} · Z ${Math.round(zz)} · ${Math.round(y)} m</span><span>${CLASSES[cls].label}</span>${hit}`;
+  }
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+  // ---------- Panel ----------
+  function select(id) {
+    selectedId = id && zones.has(id) ? id : null;
+    renderZones(); renderList(); renderEditor();
+  }
+  function renderAll() { renderZones(); renderList(); renderEditor(); renderJson(); }
+  function renderList() {
+    const list = $("#zoneList"), zs = ordered();
+    $("#zoneCount").textContent = zs.length;
+    const empty = $("#emptyList");
+    empty.hidden = zs.length > 0;
+    empty.textContent = !loaded ? "Loading saved zones…" : readOnly ? "No zones yet." : "No zones yet. Pick Rectangle or Circle above the map, then drag on the map to draw one.";
+    list.innerHTML = zs.map((z) => {
+      const col = zoneColour(z), b = bounds(z);
+      const size = isRect(z) ? `${km(b.x2 - b.x1)} × ${km(b.z2 - b.z1)}` : `radius ${km(z.Radius)}`;
+      const bad = problemWith(z);
+      return `<li><button type="button" data-id="${esc(z.id)}" aria-current="${z.id === selectedId}">` +
+        `<span class="sw" style="background:${rgb(col, 0.35)};box-shadow:inset 0 0 0 2px ${rgb(col)}"></span>` +
+        `<span class="zn">${esc(z.Name)}<span class="zm">${bad ? "Won't load: " + esc(bad) : SHAPES[z.ZoneShape] + " · " + size}</span></span>` +
+        `<span class="zt">${tempText(z)}</span></button></li>`;
+    }).join("");
+  }
+  $("#zoneList").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-id]"); if (!b) return;
+    select(b.dataset.id); const z = zones.get(b.dataset.id); if (z) showZone(z);
+  });
+
+  let editorFor = null;
+  function renderEditor() {
+    const z = zones.get(selectedId), ed = $("#editor");
+    if (!z) { ed.hidden = true; editorFor = null; return; }
+    ed.hidden = false;
+    if (editorFor !== z.id) { resetDeleteButton(); editorFor = z.id; }
+    syncEditor(true);
+  }
+  // Writes the zone into the inputs, leaving alone the one being typed in
+  function syncEditor(withStats) {
+    const z = zones.get(selectedId); if (!z) return;
+    const set = (id, v) => { const inp = document.getElementById(id); if (document.activeElement !== inp) inp.value = v; };
+    $("#edTitle").textContent = z.Name || "Zone";
+    set("zName", z.Name); set("zTemp", z.Temperature);
+    document.querySelectorAll("#segShape button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.v === z.ZoneShape)));
+    document.querySelectorAll("#segMode button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.v === z.Mode)));
+    const hints = {
+      RECTANGLE: "Only X and Z count, unless you set a height band.",
+      RADIAL: "A circle on the map. Only X and Z count, unless you set a height band.",
+      SPHERE: "A ball: the full 3D distance counts, so it reaches less ground on hills and in valleys."
+    };
+    $("#shapeHint").textContent = hints[z.ZoneShape] || "";
+    if (z.Mode === "ADD") {
+      const lo = DAY_LOW + z.Temperature, hi = DAY_HIGH + z.Temperature;
+      $("#tempHint").textContent = `Added to the normal temperature, so day and night, sun, shade and wind still count. On Hardcore Desert that's ${fmtT(round1(lo))} °C at sunrise to ${fmtT(round1(hi))} °C mid-afternoon, before the sun bonus.`;
+    } else {
+      $("#tempHint").textContent = `Replaces the normal temperature at every hour: ${fmtT(z.Temperature)} °C day and night, whatever the sun or wind. Heat comfort is neutral at 24 °C.`;
+    }
+    const rect = isRect(z), b = bounds(z);
+    $("#geoRect").hidden = !rect; $("#geoCircle").hidden = rect;
+    if (rect) { set("zX1", b.x1); set("zX2", b.x2); set("zZ1", b.z1); set("zZ2", b.z2); }
+    else { set("zCX", z.Position[0]); set("zCZ", z.Position[2]); set("zR", z.Radius); }
+    const sphere = z.ZoneShape === "SPHERE";
+    $("#rowHeight").hidden = sphere;
+    set("zHeight", z.Height);
+    const ny = needsY(z);
+    $("#rowY").hidden = !ny; $("#rowYAuto").hidden = !ny;
+    set("zY", zoneY(z)); $("#zYAuto").checked = !!z.YAuto; $("#zY").disabled = !!z.YAuto || readOnly;
+    $("#heightHint").textContent = sphere ? "The ball is centred on Y." : z.Height > 0 ? `Players count only within ${z.Height / 2} m above or below Y.` : "0 means any height.";
+    if (withStats) renderStats(z);
+  }
+  function renderStats(z) {
+    const s = zoneStats(z), dl = $("#stats");
+    const parts = Object.entries(s.counts).sort((a, b) => b[1] - a[1]).slice(0, 3)
+      .map(([k, n]) => `${CLASSES[k].label} ${Math.round(n / s.cells * 100)} %`).join(", ");
+    const bad = problemWith(z);
+    dl.innerHTML =
+      (bad ? `<dt>Problem</dt><dd style="color:var(--danger)">The mod would skip this zone: ${esc(bad)}.</dd>` : "") +
+      `<dt>Ground covered</dt><dd>${s.cells ? (s.cells * STEP * STEP / 1e6).toFixed(1) + " km²" : "none"}</dd>` +
+      (s.cells ? `<dt>Ground</dt><dd>${parts}</dd><dt>Ground height</dt><dd>${Math.round(s.hMin)} to ${Math.round(s.hMax)} m</dd>` : "");
+  }
+  function zoneStats(z) {
+    const b = bounds(z), counts = {};
+    let cells = 0, hMin = Infinity, hMax = -Infinity;
+    const c0 = Math.max(0, Math.ceil(b.x1 / STEP)), c1 = Math.min(N - 1, Math.floor(b.x2 / STEP));
+    const z0 = Math.max(0, Math.ceil(b.z1 / STEP)), z1 = Math.min(N - 1, Math.floor(b.z2 / STEP));
+    for (let zi = z0; zi <= z1; zi++) {
+      for (let c = c0; c <= c1; c++) {
+        const i = ((N - 1) - zi) * N + c, y = HGT[i] / 10;
+        if (insideDistSq(z, c * STEP, y, zi * STEP) < 0) continue;
+        cells++;
+        const k = classAtIndex(i); counts[k] = (counts[k] || 0) + 1;
+        if (y < hMin) hMin = y; if (y > hMax) hMax = y;
+      }
+    }
+    return { cells: cells, counts: counts, hMin: hMin, hMax: hMax };
+  }
+
+  function edit(fn, delay) {
+    const z = zones.get(selectedId); if (!z || readOnly) return;
+    fn(z); updateY(z);
+    renderZones(); renderList(); syncEditor(true); renderJson();
+    commit(z.id, delay);
+  }
+  $("#zName").addEventListener("input", (e) => edit((z) => { z.Name = e.target.value; }, 600));
+  $("#zTemp").addEventListener("input", (e) => { const v = parseFloat(e.target.value); if (Number.isFinite(v)) edit((z) => { z.Temperature = clamp(v, -100, 100); }, 600); });
+  function geoInput(id, fn) {
+    $(id).addEventListener("change", (e) => { const v = parseFloat(e.target.value); if (!Number.isFinite(v)) { syncEditor(false); return; } edit((z) => fn(z, clamp(v, 0, WORLD))); });
+  }
+  geoInput("#zX1", (z, v) => { if (v < z.Position2[0]) z.Position[0] = v; });
+  geoInput("#zX2", (z, v) => { if (v > z.Position[0]) z.Position2[0] = v; });
+  geoInput("#zZ1", (z, v) => { if (v < z.Position2[2]) z.Position[2] = v; });
+  geoInput("#zZ2", (z, v) => { if (v > z.Position[2]) z.Position2[2] = v; });
+  geoInput("#zCX", (z, v) => { z.Position[0] = v; });
+  geoInput("#zCZ", (z, v) => { z.Position[2] = v; });
+  geoInput("#zR", (z, v) => { if (v > 0) z.Radius = v; });
+  $("#zHeight").addEventListener("change", (e) => { const v = parseFloat(e.target.value); edit((z) => { z.Height = Number.isFinite(v) ? Math.max(0, v) : 0; }); });
+  $("#zY").addEventListener("change", (e) => { const v = parseFloat(e.target.value); if (Number.isFinite(v)) edit((z) => { z.YAuto = false; setY(z, round1(v)); }); });
+  $("#zYAuto").addEventListener("change", (e) => edit((z) => { z.YAuto = e.target.checked; }));
+  $("#segShape").addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-v]"); if (!b) return;
+    edit((z) => {
+      const to = b.dataset.v; if (to === z.ZoneShape) return;
+      if (isRect(z) && to !== "RECTANGLE") {
+        const c = centre(z), bb = bounds(z);
+        z.Radius = Math.max(1, snap(Math.min(bb.x2 - bb.x1, bb.z2 - bb.z1) / 2));
+        z.Position = [c.x, z.Position[1], c.z]; z.Position2 = [0, 0, 0];
+      } else if (!isRect(z) && to === "RECTANGLE") {
+        const x = z.Position[0], zz = z.Position[2], r = z.Radius;
+        z.Position = [x - r, z.Position[1], zz - r]; z.Position2 = [x + r, z.Position[1], zz + r]; z.Radius = 0;
+      }
+      z.ZoneShape = to;
+    });
+  });
+  $("#segMode").addEventListener("click", (e) => { const b = e.target.closest("button[data-v]"); if (b) edit((z) => { z.Mode = b.dataset.v; }); });
+
+  $("#btnDup").addEventListener("click", () => {
+    const z = zones.get(selectedId); if (!z || readOnly) return;
+    const c = clone(z); c.id = newId(); c.Name = z.Name + " copy"; c.Created = Date.now();
+    const shift = Math.max(250, snapStep);
+    c.Position[0] += shift; if (isRect(c)) c.Position2[0] += shift;
+    updateY(c); zones.set(c.id, c); select(c.id); commit(c.id);
+  });
+  let delTimer = 0;
+  function resetDeleteButton() { clearTimeout(delTimer); const b = $("#btnDel"); b.classList.remove("confirm"); b.textContent = "Delete"; }
+  $("#btnDel").addEventListener("click", () => {
+    const b = $("#btnDel"), z = zones.get(selectedId); if (!z || readOnly) return;
+    if (!b.classList.contains("confirm")) {
+      b.classList.add("confirm"); b.textContent = "Delete " + (z.Name.length > 14 ? "it" : z.Name) + "?";
+      clearTimeout(delTimer); delTimer = setTimeout(resetDeleteButton, 4000); return;
+    }
+    resetDeleteButton();
+    zones.delete(z.id); selectedId = null;
+    renderAll(); commit(z.id);
+  });
+
+  // ---------- config.json ----------
+  function fmtNum(n) { const r = Math.round(n * 1000) / 1000; return Number.isInteger(r) ? r.toFixed(1) : String(r); }
+  function vec(v, ind) { return "[\n" + v.map((n) => ind + "    " + fmtNum(n)).join(",\n") + "\n" + ind + "]"; }
+  // Same layout as DayZ's JsonFileLoader writes it
+  function buildConfig() {
+    const zs = ordered(), I = "            ";
+    let s = "{\n    \"Help\": " + JSON.stringify(HELP) + ",\n    \"Log\": " + (logOn ? 1 : 0) + ",\n    \"Zones\": ";
+    if (!zs.length) return s + "[]\n}";
+    return s + "[\n" + zs.map((z) =>
+      "        {\n" +
+      I + "\"Name\": " + JSON.stringify(z.Name) + ",\n" +
+      I + "\"ZoneShape\": \"" + z.ZoneShape + "\",\n" +
+      I + "\"Mode\": \"" + z.Mode + "\",\n" +
+      I + "\"Temperature\": " + fmtNum(z.Temperature) + ",\n" +
+      I + "\"Position\": " + vec(z.Position, I) + ",\n" +
+      I + "\"Position2\": " + vec(z.Position2, I) + ",\n" +
+      I + "\"Radius\": " + fmtNum(z.Radius) + ",\n" +
+      I + "\"Height\": " + fmtNum(z.Height) + "\n" +
+      "        }").join(",\n") + "\n    ]\n}";
+  }
+  function renderJson() { const out = $("#jsonOut"); out.value = buildConfig(); }
+  $("#btnCopy").addEventListener("click", () => {
+    const text = buildConfig(), msg = $("#copyMsg");
+    const fallback = () => { const out = $("#jsonOut"); out.focus(); out.select(); msg.textContent = "Selected: press Ctrl+C to copy."; };
+    try {
+      navigator.clipboard.writeText(text).then(() => { msg.textContent = "Copied."; }, fallback);
+    } catch (e) { fallback(); }
+  });
+  $("#logToggle").addEventListener("change", async (e) => {
+    logOn = e.target.checked; renderJson();
+    if (readOnly) return;
+    if (store && store.kind === "db") { try { await store.settings.set({ Log: logOn }); } catch (err) { onWriteError(err); } }
+    else saveLocal();
+  });
+
+  let importArmed = false;
+  $("#btnImport").addEventListener("click", async () => {
+    const msg = $("#importMsg"), btn = $("#btnImport");
+    let parsed;
+    try {
+      const obj = JSON.parse($("#jsonIn").value.replace(/^﻿/, "").trim());
+      const list = Array.isArray(obj) ? obj : obj && obj.Zones;
+      if (!Array.isArray(list)) throw new Error("no Zones list");
+      parsed = { log: !Array.isArray(obj) && !!obj.Log, zones: list.map((r, i) => fromRecord(null, r, i)).filter(Boolean) };
+    } catch (e) { msg.textContent = "That isn't a config.json with a \"Zones\" list."; importArmed = false; btn.textContent = "Replace the zones with these"; return; }
+    if (!importArmed && zones.size) {
+      importArmed = true; btn.textContent = `Replace all ${zones.size} zones?`; msg.textContent = "Click again to confirm."; return;
+    }
+    importArmed = false; btn.textContent = "Replace the zones with these";
+    const old = Array.from(zones.keys());
+    zones = new Map();
+    const base = Date.now();
+    parsed.zones.forEach((z, i) => { z.id = newId(); z.Created = base + i; z.YAuto = false; zones.set(z.id, z); });
+    logOn = parsed.log; $("#logToggle").checked = logOn;
+    selectedId = null; renderAll();
+    if (store && store.kind === "db") {
+      for (const id of old) commit(id);
+      for (const id of zones.keys()) commit(id);
+      try { await store.settings.set({ Log: logOn }); } catch (err) { onWriteError(err); }
+    } else saveLocal();
+    const skipped = parsed.zones.filter((z) => problemWith(z)).length;
+    msg.textContent = `Loaded ${parsed.zones.length} zone${parsed.zones.length === 1 ? "" : "s"}` + (skipped ? `; ${skipped} won't load in the mod (see the list).` : ".");
+  });
+
+  // ---------- Tabs, tools, keys ----------
+  function showTab(json) {
+    $("#tabZones").hidden = json; $("#tabJson").hidden = !json;
+    $("#tabZonesBtn").setAttribute("aria-selected", String(!json)); $("#tabJsonBtn").setAttribute("aria-selected", String(json));
+    if (json) renderJson();
+  }
+  $("#tabZonesBtn").addEventListener("click", () => showTab(false));
+  $("#tabJsonBtn").addEventListener("click", () => showTab(true));
+  function setTool(t) {
+    tool = readOnly ? "move" : t;
+    document.querySelectorAll("#segTool button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.v === tool)));
+    svg.classList.toggle("is-drawing", tool !== "move");
+    renderHandles();
+  }
+  $("#segTool").addEventListener("click", (e) => { const b = e.target.closest("button[data-v]"); if (b) setTool(b.dataset.v); });
+  $("#segLayer").addEventListener("click", (e) => { const b = e.target.closest("button[data-v]"); if (b) setLayer(b.dataset.v); });
+  $("#snapSel").addEventListener("change", (e) => { snapStep = parseInt(e.target.value, 10) || 0; prefs.set("snap", String(snapStep)); });
+  $("#zoomIn").addEventListener("click", () => zoomBy(1.5));
+  $("#zoomOut").addEventListener("click", () => zoomBy(1 / 1.5));
+  $("#zoomFit").addEventListener("click", fitAll);
+  document.addEventListener("keydown", (e) => {
+    const tag = (e.target && e.target.tagName) || "";
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || e.ctrlKey || e.metaKey || e.altKey) return;
+    const k = e.key.toLowerCase();
+    if (k === "escape") { if (gesture) cancelGesture(); else if (tool !== "move") setTool("move"); else select(null); renderDraft(); }
+    else if (k === "v") setTool("move");
+    else if (k === "r" && !readOnly) setTool("rect");
+    else if (k === "c" && !readOnly) setTool("circle");
+    else if (k === "+" || k === "=") zoomBy(1.5);
+    else if (k === "-" || k === "_") zoomBy(1 / 1.5);
+    else if (k === "f") fitAll();
+  });
+
+  // ---------- Start ----------
+  $("#stepTxt").textContent = STEP;
+  snapStep = parseInt(prefs.get("snap", "50"), 10); if (!Number.isFinite(snapStep)) snapStep = 50;
+  $("#snapSel").value = String(snapStep);
+  renderNames(); renderBuildings();
+  setLayer(prefs.get("layer", "ground") === "height" ? "height" : "ground");
+  renderAll();
+  initStore();
+})();
+</script>
+</body>
+</html>
