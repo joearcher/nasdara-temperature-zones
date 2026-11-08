@@ -204,7 +204,7 @@ body.is-readonly .needs-write { display: none; }
 <header class="app-header">
   <div>
     <h1>Nasdara Temperature Zones</h1>
-    <p>Zones for NasdaraHardcore_TemperatureZones on Hardcore Desert. Terrain sampled from the game every <span id="stepTxt">25</span> m.</p>
+    <p>Zones for ZERO_TemperatureZones on Hardcore Desert. Terrain sampled from the game every <span id="stepTxt">25</span> m.</p>
   </div>
   <span class="status" id="status" data-state="loading">Loading zones…</span>
 </header>
@@ -311,6 +311,11 @@ body.is-readonly .needs-write { display: none; }
           <small id="tempHint"></small>
         </label>
 
+        <label class="field"><span>Priority</span>
+          <input id="zPriority" type="number" step="1" inputmode="numeric">
+          <small id="priorityHint"></small>
+        </label>
+
         <fieldset id="geoRect">
           <legend>Edges, in metres</legend>
           <div class="grid2">
@@ -343,11 +348,11 @@ body.is-readonly .needs-write { display: none; }
         <dl class="stats" id="stats"></dl>
       </div>
 
-      <p class="rule">Where zones overlap, the one whose centre is nearest the player wins, as in the mod. The bar under the map shows which zone applies wherever you point.</p>
+      <p class="rule">Where zones overlap, the one with the highest priority wins; on a tie, the one whose centre is nearest the player, as in the mod. Higher priority zones are drawn on top. The bar under the map shows which zone applies wherever you point.</p>
     </section>
 
     <section class="panel-body" id="tabJson" role="tabpanel" aria-labelledby="tabJsonBtn" hidden>
-      <p class="rule">Save this as <code>NasdaraHardcore_TemperatureZones/config.json</code> in the server's profile folder (<code>profiles_HardcoreDesert</code>), as UTF-8 without a BOM, then restart the server. The mod reads it once at start.</p>
+      <p class="rule">Save this as <code>ZERO_TemperatureZones/config.json</code> in the server's profile folder (<code>profiles_HardcoreDesert</code>), as UTF-8 without a BOM, then restart the server. The mod reads it once at start.</p>
       <div class="row">
         <button type="button" class="btn primary" id="btnCopy">Copy config.json</button>
         <label class="check needs-write"><input type="checkbox" id="logToggle"> Log players entering and leaving zones</label>
@@ -374,7 +379,7 @@ body.is-readonly .needs-write { display: none; }
 (function () {
   const D = window.NASDARA_TERRAIN;
   const WORLD = D.size, STEP = D.step, N = D.n;
-  const HELP = "Changes the temperature the player feels (heat comfort, and through it heat buffer, sweating and heatstroke) inside zones. ZoneShape: RECTANGLE (Position and Position2 are opposite corners, only X and Z count), RADIAL (circle of Radius round Position, only X and Z count) or SPHERE (ball of Radius round Position). Height above 0 limits RECTANGLE and RADIAL zones to that many metres, centred on the zone's Y. Mode ADD adds Temperature to the normal temperature, so day and night, sun, shade, wind and buildings still count; Mode SET replaces it with Temperature (TemperatureZones behaviour). Water keeps its own temperature, and a fire or other heat source still wins when it is warmer. Where zones overlap, the one whose centre is nearest wins. Log prints players entering and leaving zones. Read once at server start.";
+  const HELP = "Changes the temperature the player feels (heat comfort, and through it heat buffer, sweating and heatstroke) inside zones. ZoneShape: RECTANGLE (Position and Position2 are opposite corners, only X and Z count), RADIAL (circle of Radius round Position, only X and Z count) or SPHERE (ball of Radius round Position). Height above 0 limits RECTANGLE and RADIAL zones to that many metres, centred on the zone's Y. Mode ADD adds Temperature to the normal temperature, so day and night, sun, shade, wind and buildings still count; Mode SET replaces it with Temperature (TemperatureZones behaviour). Water keeps its own temperature, and a fire or other heat source still wins when it is warmer. Where zones overlap, the one with the highest Priority wins (default 0, can be negative); on a tie, the one whose centre is nearest. Log prints players entering and leaving zones. Read once at server start.";
   // Hardcore Desert's cfggameplay temperatures: sunrise low and mid-afternoon high, every month
   const DAY_LOW = 3.4, DAY_HIGH = 44.4;
   const SVGNS = "http://www.w3.org/2000/svg";
@@ -479,6 +484,8 @@ body.is-readonly .needs-write { display: none; }
   const isRect = (z) => z.ZoneShape === "RECTANGLE";
   const round1 = (n) => Math.round(n * 10) / 10;
   const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
+  // The mod's Priority is an int; DayZ's JSON reader truncates a decimal
+  const toInt = (v) => clamp(Math.trunc(num(v)), -2147483648, 2147483647);
   const vec3 = (v) => Array.isArray(v) ? [num(v[0]), num(v[1]), num(v[2])] : [0, 0, 0];
 
   function centre(z) {
@@ -503,7 +510,7 @@ body.is-readonly .needs-write { display: none; }
     z.Position = [x1, z.Position[1], z1]; z.Position2 = [x2, z.Position2[1], z2];
   }
 
-  // Mirrors NHTZ_TemperatureZones.ValidateZone: an empty string means the zone loads
+  // Mirrors ZTZ_TemperatureZones.ValidateZone: an empty string means the zone loads
   function problemWith(z) {
     if (z.Mode !== "SET" && z.Mode !== "ADD") return "Mode must be ADD or SET";
     if (z.ZoneShape === "RECTANGLE") {
@@ -527,6 +534,7 @@ body.is-readonly .needs-write { display: none; }
       Position2: vec3(r.Position2),
       Radius: num(r.Radius),
       Height: Math.max(0, num(r.Height)),
+      Priority: toInt(r.Priority),
       YAuto: !!r.YAuto,
       Created: num(r.Created)
     };
@@ -535,11 +543,11 @@ body.is-readonly .needs-write { display: none; }
     return z;
   }
   function toRecord(z) {
-    return { Name: z.Name, ZoneShape: z.ZoneShape, Mode: z.Mode, Temperature: z.Temperature, Position: z.Position.slice(), Position2: z.Position2.slice(), Radius: z.Radius, Height: z.Height, YAuto: !!z.YAuto, Created: z.Created };
+    return { Name: z.Name, ZoneShape: z.ZoneShape, Mode: z.Mode, Temperature: z.Temperature, Position: z.Position.slice(), Position2: z.Position2.slice(), Radius: z.Radius, Height: z.Height, Priority: z.Priority, YAuto: !!z.YAuto, Created: z.Created };
   }
   const clone = (z) => Object.assign({}, z, { Position: z.Position.slice(), Position2: z.Position2.slice() });
 
-  // Mirrors NHTZ_TemperatureZones.FindZone: inside, and nearest centre wins
+  // Mirrors ZTZ_TemperatureZones.FindZone: inside, then highest Priority, then nearest centre
   function insideDistSq(z, x, y, zz) {
     let dx, dz;
     if (isRect(z)) {
@@ -562,9 +570,17 @@ body.is-readonly .needs-write { display: none; }
   }
   function findZone(x, y, zz) {
     let best = null, bestD = Infinity;
-    for (const z of ordered()) { if (problemWith(z)) continue; const d = insideDistSq(z, x, y, zz); if (d >= 0 && d < bestD) { best = z; bestD = d; } }
+    for (const z of ordered()) {
+      if (problemWith(z)) continue;
+      const d = insideDistSq(z, x, y, zz);
+      if (d < 0) continue;
+      if (best && (z.Priority < best.Priority || (z.Priority === best.Priority && d >= bestD))) continue;
+      best = z; bestD = d;
+    }
     return best;
   }
+  // Lowest priority first, so higher priority zones are drawn on top and take the click where they overlap
+  function drawOrder() { return ordered().sort((a, b) => a.Priority - b.Priority); }
 
   const fmtT = (t) => (Math.round(t * 10) / 10).toString().replace("-", "−");
   function tempText(z) {
@@ -802,7 +818,7 @@ body.is-readonly .needs-write { display: none; }
   function renderZones() {
     const g = $("#zones"); g.textContent = "";
     const k = view.k;
-    for (const z of ordered()) {
+    for (const z of drawOrder()) {
       const col = zoneColour(z), sel = z.id === selectedId;
       const grp = el("g", { "data-zone": z.id }, g);
       const attrs = { fill: rgb(col, sel ? 0.3 : 0.2), stroke: rgb(col), "stroke-width": sel ? 3 : 2, "vector-effect": "non-scaling-stroke" };
@@ -992,7 +1008,7 @@ body.is-readonly .needs-write { display: none; }
       if (r <= 0) return;
       z = { ZoneShape: "RADIAL", Position: [a.x, 0, a.z], Position2: [0, 0, 0], Radius: r };
     }
-    z = Object.assign(z, { id: newId(), Name: nextName(), Mode: "ADD", Temperature: 4, Height: 0, YAuto: true, Created: Date.now() });
+    z = Object.assign(z, { id: newId(), Name: nextName(), Mode: "ADD", Temperature: 4, Height: 0, Priority: 0, YAuto: true, Created: Date.now() });
     zones.set(z.id, z);
     setTool("move"); select(z.id); commit(z.id);
   }
@@ -1028,9 +1044,10 @@ body.is-readonly .needs-write { display: none; }
       const col = zoneColour(z), b = bounds(z);
       const size = isRect(z) ? `${km(b.x2 - b.x1)} × ${km(b.z2 - b.z1)}` : `radius ${km(z.Radius)}`;
       const bad = problemWith(z);
+      const prio = z.Priority ? " · priority " + z.Priority : "";
       return `<li><button type="button" data-id="${esc(z.id)}" aria-current="${z.id === selectedId}">` +
         `<span class="sw" style="background:${rgb(col, 0.35)};box-shadow:inset 0 0 0 2px ${rgb(col)}"></span>` +
-        `<span class="zn">${esc(z.Name)}<span class="zm">${bad ? "Won't load: " + esc(bad) : SHAPES[z.ZoneShape] + " · " + size}</span></span>` +
+        `<span class="zn">${esc(z.Name)}<span class="zm">${bad ? "Won't load: " + esc(bad) : SHAPES[z.ZoneShape] + " · " + size + prio}</span></span>` +
         `<span class="zt">${tempText(z)}</span></button></li>`;
     }).join("");
   }
@@ -1052,7 +1069,8 @@ body.is-readonly .needs-write { display: none; }
     const z = zones.get(selectedId); if (!z) return;
     const set = (id, v) => { const inp = document.getElementById(id); if (document.activeElement !== inp) inp.value = v; };
     $("#edTitle").textContent = z.Name || "Zone";
-    set("zName", z.Name); set("zTemp", z.Temperature);
+    set("zName", z.Name); set("zTemp", z.Temperature); set("zPriority", z.Priority);
+    $("#priorityHint").textContent = priorityHint(z);
     document.querySelectorAll("#segShape button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.v === z.ZoneShape)));
     document.querySelectorAll("#segMode button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.v === z.Mode)));
     const hints = {
@@ -1079,6 +1097,24 @@ body.is-readonly .needs-write { display: none; }
     set("zY", zoneY(z)); $("#zYAuto").checked = !!z.YAuto; $("#zY").disabled = !!z.YAuto || readOnly;
     $("#heightHint").textContent = sphere ? "The ball is centred on Y." : z.Height > 0 ? `Players count only within ${z.Height / 2} m above or below Y.` : "0 means any height.";
     if (withStats) renderStats(z);
+  }
+  // Names the zones this one overlaps and which way the priority goes
+  function priorityHint(z) {
+    const base = "Where zones overlap, the highest priority wins; on a tie, the nearest centre. Default 0, can be negative.";
+    const b = bounds(z);
+    const over = ordered().filter((o) => {
+      if (o.id === z.id) return false;
+      const ob = bounds(o);
+      return ob.x1 < b.x2 && ob.x2 > b.x1 && ob.z1 < b.z2 && ob.z2 > b.z1;
+    });
+    if (!over.length) return base;
+    const list = (zs) => zs.map((o) => o.Name).join(", ");
+    const beats = over.filter((o) => o.Priority < z.Priority), loses = over.filter((o) => o.Priority > z.Priority), ties = over.filter((o) => o.Priority === z.Priority);
+    let s = base;
+    if (beats.length) s += ` Wins over ${list(beats)}.`;
+    if (loses.length) s += ` Loses to ${list(loses)}.`;
+    if (ties.length) s += ` Same priority as ${list(ties)}: nearest centre wins.`;
+    return s;
   }
   function renderStats(z) {
     const s = zoneStats(z), dl = $("#stats");
@@ -1115,6 +1151,7 @@ body.is-readonly .needs-write { display: none; }
   }
   $("#zName").addEventListener("input", (e) => edit((z) => { z.Name = e.target.value; }, 600));
   $("#zTemp").addEventListener("input", (e) => { const v = parseFloat(e.target.value); if (Number.isFinite(v)) edit((z) => { z.Temperature = clamp(v, -100, 100); }, 600); });
+  $("#zPriority").addEventListener("change", (e) => { const v = parseFloat(e.target.value); edit((z) => { z.Priority = Number.isFinite(v) ? toInt(v) : 0; }); });
   function geoInput(id, fn) {
     $(id).addEventListener("change", (e) => { const v = parseFloat(e.target.value); if (!Number.isFinite(v)) { syncEditor(false); return; } edit((z) => fn(z, clamp(v, 0, WORLD))); });
   }
@@ -1182,7 +1219,8 @@ body.is-readonly .needs-write { display: none; }
       I + "\"Position\": " + vec(z.Position, I) + ",\n" +
       I + "\"Position2\": " + vec(z.Position2, I) + ",\n" +
       I + "\"Radius\": " + fmtNum(z.Radius) + ",\n" +
-      I + "\"Height\": " + fmtNum(z.Height) + "\n" +
+      I + "\"Height\": " + fmtNum(z.Height) + ",\n" +
+      I + "\"Priority\": " + z.Priority + "\n" +
       "        }").join(",\n") + "\n    ]\n}";
   }
   function renderJson() { const out = $("#jsonOut"); out.value = buildConfig(); }
