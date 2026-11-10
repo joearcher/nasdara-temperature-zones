@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Nasdara Temperature Zones</title>
-<meta name="description" content="Draw temperature zones on a terrain map of DayZ's Nasdara and export them as a TemperatureZones config.json.">
+<meta name="description" content="Draw temperature zones on a terrain map of DayZ's Nasdara or Chernarus and export them as a TemperatureZones config.json.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%231e5a57'/%3E%3Cpath d='M16 6a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7z' fill='%23fff'/%3E%3C/svg%3E">
 <style>:root{color-scheme:light;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}body{margin:0;font:14px system-ui,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -203,8 +203,8 @@ body.is-readonly .needs-write { display: none; }
 <body>
 <header class="app-header">
   <div>
-    <h1>Nasdara Temperature Zones</h1>
-    <p>Zones for ZERO_TemperatureZones on Hardcore Desert. Terrain sampled from the game every <span id="stepTxt">25</span> m.</p>
+    <h1 id="appTitle">Nasdara Temperature Zones</h1>
+    <p>Zones for ZERO_TemperatureZones on <span id="missionTxt">Hardcore Desert</span>. Terrain sampled from the game every <span id="stepTxt">25</span> m.</p>
   </div>
   <span class="status" id="status" data-state="loading">Loading zones…</span>
 </header>
@@ -212,6 +212,10 @@ body.is-readonly .needs-write { display: none; }
 <main class="workspace">
   <div class="map-col">
     <div class="toolbar" role="toolbar" aria-label="Map tools">
+      <div class="tool-group">
+        <label class="label" for="mapSel">World</label>
+        <select id="mapSel"></select>
+      </div>
       <div class="tool-group">
         <span class="label">Tool</span>
         <div class="seg" id="segTool">
@@ -241,9 +245,9 @@ body.is-readonly .needs-write { display: none; }
     </div>
 
     <div class="map-wrap" id="mapWrap">
-      <svg id="map" xmlns="http://www.w3.org/2000/svg" aria-label="Map of Nasdara with temperature zones">
+      <svg id="map" xmlns="http://www.w3.org/2000/svg" aria-label="Map with temperature zones">
         <defs></defs>
-        <rect id="mapBg" x="0" y="0" width="16384" height="16384" fill="#8f8a80"></rect>
+        <rect id="mapBg" x="0" y="0" width="0" height="0" fill="#8f8a80"></rect>
         <image id="base" preserveAspectRatio="none"></image>
         <path id="grid" fill="none" stroke="var(--map-grid)" stroke-width="1" vector-effect="non-scaling-stroke"></path>
         <path id="bld" fill="none" stroke="var(--map-bld)" stroke-width="2.4" stroke-linecap="square" vector-effect="non-scaling-stroke" pointer-events="none"></path>
@@ -352,7 +356,7 @@ body.is-readonly .needs-write { display: none; }
     </section>
 
     <section class="panel-body" id="tabJson" role="tabpanel" aria-labelledby="tabJsonBtn" hidden>
-      <p class="rule">Save this as <code>ZERO_TemperatureZones/config.json</code> in the server's profile folder (<code>profiles_HardcoreDesert</code>), as UTF-8 without a BOM, then restart the server. The mod reads it once at start.</p>
+      <p class="rule">Save this as <code>ZERO_TemperatureZones/config.json</code> in the <span id="profileTxt">server's profile folder</span>, as UTF-8 without a BOM, then restart the server. The mod reads it once at start.</p>
       <div class="row">
         <button type="button" class="btn primary" id="btnCopy">Copy config.json</button>
         <label class="check needs-write"><input type="checkbox" id="logToggle"> Log players entering and leaving zones</label>
@@ -373,33 +377,75 @@ body.is-readonly .needs-write { display: none; }
   </aside>
 </main>
 
-<script src="terrain.js"></script>
 <script>
 "use strict";
 (function () {
-  const D = window.NASDARA_TERRAIN;
-  const WORLD = D.size, STEP = D.step, N = D.n;
+  // ---------- Worlds ----------
+  // Each terrain-<id>.js registers window.ZONE_TERRAIN[id]. Zones are kept per world.
+  // minTemps / maxTemps: the mission's sunrise low and mid-afternoon high for each month (cfggameplay.json)
+  const MAPS = {
+    nasdara: {
+      label: "Nasdara", mission: "Hardcore Desert", profile: "profiles_HardcoreDesert",
+      minTemps: Array(12).fill(3.4), maxTemps: Array(12).fill(44.4),
+      legend: ["sand", "desert", "drygrass", "greengrass", "soil", "stony", "pine", "lake", "water", "road", "built"],
+      classify(name) {
+        if (name.includes("nasdara_sand")) return "sand";
+        if (name.includes("nasdara_desert")) return "desert";
+        if (name.includes("grass_dry")) return "drygrass";
+        if (name.includes("grass_green")) return "greengrass";
+        if (name.includes("nasdara_soil") || name === "dirt_ext") return "soil";
+        if (name.includes("stony") || name === "stone_ext") return "stony";
+        if (name.includes("forest")) return "pine";
+        if (name.includes("mud")) return "mud";
+        if (name.includes("nasdara_lake")) return "lake";
+        if (name.includes("asphalt")) return "road";
+        if (name.includes("oil")) return "oil";
+        return "built";
+      }
+    },
+    chernarusplus: {
+      label: "Chernarus", mission: "vanilla Chernarus", profile: "",
+      minTemps: [-3, -2, 0, 4, 9, 14, 18, 17, 13, 11, 9, 0], maxTemps: [3, 5, 7, 14, 19, 24, 26, 25, 18, 14, 10, 5],
+      legend: ["meadow", "tallgrass", "field", "leafy", "pine", "rock", "gravel", "water", "road", "built"],
+      classify(name) {
+        if (name === "cp_grass_tall") return "tallgrass";
+        if (name === "cp_grass" || name === "grass_dry_ext") return "meadow";
+        if (name.startsWith("cp_broadleaf")) return "leafy";
+        if (name.startsWith("cp_conifer")) return "pine";
+        if (name === "cp_dirt" || name === "dirt_ext" || name === "dirt_notdig_ext") return "field";
+        if (name === "cp_rock" || name === "stone_ext") return "rock";
+        if (name === "cp_gravel" || name.startsWith("gravel_")) return "gravel";
+        if (name === "asphalt_ext" || name.startsWith("cp_concrete")) return "road";
+        return "built";
+      }
+    }
+  };
+  const MAP_IDS = Object.keys(MAPS);
+  let mapId = "nasdara", MAP = MAPS.nasdara;
+  let D = null, WORLD = 1, STEP = 25, N = 1;
+  let HGT = new Int16Array(1), SRF = new Uint8Array(1), BLD = new Uint16Array(0), SRF_CLASS = [];
   const HELP = "Changes the temperature the player feels (heat comfort, and through it heat buffer, sweating and heatstroke) inside zones. ZoneShape: RECTANGLE (Position and Position2 are opposite corners, only X and Z count), RADIAL (circle of Radius round Position, only X and Z count) or SPHERE (ball of Radius round Position). Height above 0 limits RECTANGLE and RADIAL zones to that many metres, centred on the zone's Y. Mode ADD adds Temperature to the normal temperature, so day and night, sun, shade, wind and buildings still count; Mode SET replaces it with Temperature (TemperatureZones behaviour). Water keeps its own temperature, and a fire or other heat source still wins when it is warmer. Where zones overlap, the one with the highest Priority wins (default 0, can be negative); on a tie, the one whose centre is nearest. Log prints players entering and leaving zones. Read once at server start.";
-  // Hardcore Desert's cfggameplay temperatures: sunrise low and mid-afternoon high, every month
-  const DAY_LOW = 3.4, DAY_HIGH = 44.4;
   const SVGNS = "http://www.w3.org/2000/svg";
   const $ = (s) => document.querySelector(s);
   const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 
   function bytes(s) { const bin = atob(s); const a = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i); return a; }
-  const HGT = new Int16Array(bytes(D.hgt).buffer); // decimetres, row 0 = north
-  const SRF = bytes(D.srf);                        // index into D.surfaces, 255 = water
-  const BLD = new Uint16Array(bytes(D.bld).buffer); // x, z pairs in metres
-
   // ---------- Terrain ----------
   const CLASSES = {
     sand: { label: "Sand", rgb: [228, 198, 122] },
     desert: { label: "Desert", rgb: [238, 222, 178] },
     drygrass: { label: "Dry grass", rgb: [196, 190, 130] },
     greengrass: { label: "Green grass", rgb: [146, 174, 96] },
+    meadow: { label: "Grass", rgb: [150, 178, 100] },
+    tallgrass: { label: "Tall grass", rgb: [176, 186, 108] },
+    field: { label: "Field and dirt", rgb: [176, 152, 112] },
     soil: { label: "Soil", rgb: [186, 160, 120] },
     stony: { label: "Stony ground", rgb: [168, 162, 150] },
-    forest: { label: "Pine forest", rgb: [88, 122, 68] },
+    rock: { label: "Rock", rgb: [160, 156, 150] },
+    gravel: { label: "Gravel", rgb: [182, 176, 164] },
+    beach: { label: "Beach", rgb: [226, 210, 162] },
+    pine: { label: "Pine forest", rgb: [88, 122, 68] },
+    leafy: { label: "Leafy forest", rgb: [112, 150, 72] },
     mud: { label: "Mud", rgb: [138, 120, 88] },
     lake: { label: "Lake bed", rgb: [186, 194, 172] },
     water: { label: "Water", rgb: [104, 156, 200] },
@@ -407,21 +453,18 @@ body.is-readonly .needs-write { display: none; }
     oil: { label: "Oil field", rgb: [70, 70, 70] },
     built: { label: "Built-up", rgb: [150, 146, 140] }
   };
-  function classify(name) {
-    if (name.includes("nasdara_sand")) return "sand";
-    if (name.includes("nasdara_desert")) return "desert";
-    if (name.includes("grass_dry")) return "drygrass";
-    if (name.includes("grass_green")) return "greengrass";
-    if (name.includes("nasdara_soil") || name === "dirt_ext") return "soil";
-    if (name.includes("stony") || name === "stone_ext") return "stony";
-    if (name.includes("forest")) return "forest";
-    if (name.includes("mud")) return "mud";
-    if (name.includes("nasdara_lake")) return "lake";
-    if (name.includes("asphalt")) return "road";
-    if (name.includes("oil")) return "oil";
-    return "built";
+  // Unpacks a registered world into the terrain arrays above
+  function useTerrain(id) {
+    D = window.ZONE_TERRAIN[id];
+    WORLD = D.size; STEP = D.step; N = D.n;
+    HGT = new Int16Array(bytes(D.hgt).buffer);    // decimetres, row 0 = north
+    SRF = bytes(D.srf);                           // index into D.surfaces, 255 = water
+    BLD = new Uint16Array(bytes(D.bld).buffer);   // x, z pairs in metres
+    SRF_CLASS = D.surfaces.map((s) => MAP.classify(s));
+    H_MIN = Infinity; H_MAX = -Infinity;
+    for (let i = 0; i < HGT.length; i++) { if (SRF[i] === 255) continue; const h = HGT[i] / 10; if (h < H_MIN) H_MIN = h; if (h > H_MAX) H_MAX = h; }
+    for (const k in baseCache) delete baseCache[k];
   }
-  const SRF_CLASS = D.surfaces.map(classify);
   const classAtIndex = (i) => SRF[i] === 255 ? "water" : (SRF_CLASS[SRF[i]] || "built");
   function cellIndex(x, z) {
     const c = Math.round(x / STEP), r = (N - 1) - Math.round(z / STEP);
@@ -436,8 +479,7 @@ body.is-readonly .needs-write { display: none; }
     const h = (c, zi) => hAt((N - 1) - zi, c);
     return (h(c0, z0) * (1 - tx) + h(c1, z0) * tx) * (1 - tz) + (h(c0, z1) * (1 - tx) + h(c1, z1) * tx) * tz;
   }
-  let H_MIN = Infinity, H_MAX = -Infinity;
-  for (let i = 0; i < HGT.length; i++) { if (SRF[i] === 255) continue; const h = HGT[i] / 10; if (h < H_MIN) H_MIN = h; if (h > H_MAX) H_MAX = h; }
+  let H_MIN = 0, H_MAX = 1;
 
   const RAMP = [[0, [106, 146, 104]], [0.18, [168, 180, 116]], [0.38, [218, 200, 142]], [0.6, [196, 156, 106]], [0.82, [150, 112, 84]], [1, [238, 234, 228]]];
   function ramp(t) {
@@ -662,18 +704,21 @@ body.is-readonly .needs-write { display: none; }
     $("#readonlyNote").hidden = false; setStatus("readonly");
     document.querySelectorAll("#editor input, #editor button").forEach((el) => { el.disabled = true; });
   }
+  // Nasdara keeps the keys and collection it had before there was more than one world
+  const localKey = (k) => "nhtz-zone-map:" + (mapId === "nasdara" ? "" : mapId + ":") + k;
   function saveLocal() {
-    try { localStorage.setItem("nhtz-zone-map:zones", JSON.stringify(ordered().map((z) => Object.assign({ id: z.id }, toRecord(z))))); localStorage.setItem("nhtz-zone-map:log", logOn ? "1" : "0"); setStatus("local"); }
+    try { localStorage.setItem(localKey("zones"), JSON.stringify(ordered().map((z) => Object.assign({ id: z.id }, toRecord(z))))); localStorage.setItem(localKey("log"), logOn ? "1" : "0"); setStatus("local"); }
     catch (e) { setStatus("error", "Not saved: copy the config.json"); }
   }
   function useLocal() {
     store = { kind: "local" };
     $("#localNote").hidden = false;
     try {
-      const raw = JSON.parse(localStorage.getItem("nhtz-zone-map:zones") || "[]");
+      const raw = JSON.parse(localStorage.getItem(localKey("zones")) || "[]");
       raw.forEach((r, i) => { const z = fromRecord(r.id || newId(), r, i); if (z) zones.set(z.id, z); });
-      logOn = localStorage.getItem("nhtz-zone-map:log") === "1";
+      logOn = localStorage.getItem(localKey("log")) === "1";
     } catch (e) { /* nothing saved yet */ }
+    $("#logToggle").checked = logOn;
     loaded = true; setStatus("local"); renderAll();
   }
   function newId() {
@@ -681,12 +726,24 @@ body.is-readonly .needs-write { display: none; }
     return "z" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
   }
 
-  async function initStore() {
-    let db = null;
-    try { if (window.claude && typeof window.claude.use === "function") db = await window.claude.use("db"); } catch (e) { db = null; }
+  let db = null, dbChecked = false, unsubs = [], storeToken = 0;
+  // Opens the current world's zones: the shared store when the page has one, otherwise this browser
+  async function openStore() {
+    const token = ++storeToken;
+    unsubs.forEach((u) => { try { if (typeof u === "function") u(); } catch (e) { /* already closed */ } });
+    unsubs = [];
+    zones = new Map(); selectedId = null; loaded = false; logOn = false;
+    if (!dbChecked) {
+      dbChecked = true;
+      try { if (window.claude && typeof window.claude.use === "function") db = await window.claude.use("db"); } catch (e) { db = null; }
+      if (token !== storeToken) return;
+    }
     if (!db) { useLocal(); return; }
-    store = { kind: "db", col: db.collection("zones"), settings: db.doc("settings/main") };
-    store.col.onSnapshot((snap) => {
+    const nas = mapId === "nasdara";
+    store = { kind: "db", col: db.collection(nas ? "zones" : "zones_" + mapId), settings: db.doc(nas ? "settings/main" : "settings/" + mapId) };
+    setStatus("loading"); renderAll();
+    unsubs.push(store.col.onSnapshot((snap) => {
+      if (token !== storeToken) return;
       const next = new Map();
       snap.docs.forEach((d, i) => { const z = fromRecord(d.id, d.data(), i); if (z) next.set(d.id, z); });
       // Keep what this page is still writing or dragging
@@ -696,10 +753,18 @@ body.is-readonly .needs-write { display: none; }
       if (selectedId && !zones.has(selectedId)) selectedId = null;
       if (!pending.size && !readOnly) setStatus("saved");
       renderAll();
-    }, (e) => { setStatus("error", e && e.code === "revoked" ? "Not available" : "Not saved: lost connection"); });
-    store.settings.onSnapshot((s) => {
+    }, (e) => { if (token === storeToken) setStatus("error", e && e.code === "revoked" ? "Not available" : "Not saved: lost connection"); }));
+    unsubs.push(store.settings.onSnapshot((s) => {
+      if (token !== storeToken) return;
       const d = s.exists ? s.data() : null; logOn = !!(d && d.Log); $("#logToggle").checked = logOn; renderJson();
-    }, () => {});
+    }, () => {}));
+  }
+  // Writes anything still waiting before the page moves to another world's zones
+  async function flushAll() {
+    const ids = Array.from(pending.keys());
+    for (const id of ids) { const p = pending.get(id); if (p) clearTimeout(p.timer); }
+    await Promise.all(ids.map((id) => flush(id)));
+    while (inflightCount > 0) await new Promise((res) => setTimeout(res, 50));
   }
 
   // ---------- View ----------
@@ -781,7 +846,7 @@ body.is-readonly .needs-write { display: none; }
   }
 
   function renderNames() {
-    const g = $("#names");
+    const g = $("#names"); g.textContent = "";
     const city = new Set(["Capital", "City"]), village = new Set(["Village"]);
     for (const [type, x, z, name] of D.names) {
       const cls = city.has(type) ? "n-city" : village.has(type) ? "n-village" : "n-minor";
@@ -810,7 +875,7 @@ body.is-readonly .needs-write { display: none; }
       lg.innerHTML = `<div class="ramp"><span>${Math.round(H_MIN)} m</span><b style="background:linear-gradient(90deg,${stops})"></b><span>${Math.round(H_MAX)} m</span></div>`;
       return;
     }
-    const keys = ["sand", "desert", "drygrass", "greengrass", "soil", "stony", "forest", "lake", "water", "road", "built"];
+    const keys = MAP.legend;
     lg.innerHTML = "<ul>" + keys.map((k) => `<li><i style="background:${rgb(CLASSES[k].rgb)}"></i>${CLASSES[k].label}</li>`).join("") + `<li><i style="background:var(--map-bld)"></i>Buildings</li></ul>`;
   }
 
@@ -1016,7 +1081,7 @@ body.is-readonly .needs-write { display: none; }
   // ---------- Readout ----------
   function showReadout(x, zz) {
     const ro = $("#readout");
-    if (x == null || x < 0 || zz < 0 || x > WORLD || zz > WORLD) {
+    if (!D || x == null || x < 0 || zz < 0 || x > WORLD || zz > WORLD) {
       ro.innerHTML = `<span class="muted">Point at the map to see coordinates, ground height and which zone applies there.</span>`;
       return;
     }
@@ -1080,8 +1145,7 @@ body.is-readonly .needs-write { display: none; }
     };
     $("#shapeHint").textContent = hints[z.ZoneShape] || "";
     if (z.Mode === "ADD") {
-      const lo = DAY_LOW + z.Temperature, hi = DAY_HIGH + z.Temperature;
-      $("#tempHint").textContent = `Added to the normal temperature, so day and night, sun, shade and wind still count. On Hardcore Desert that's ${fmtT(round1(lo))} °C at sunrise to ${fmtT(round1(hi))} °C mid-afternoon, before the sun bonus.`;
+      $("#tempHint").textContent = `Added to the normal temperature, so day and night, sun, shade and wind still count. ${addedRange(z.Temperature)}`;
     } else {
       $("#tempHint").textContent = `Replaces the normal temperature at every hour: ${fmtT(z.Temperature)} °C day and night, whatever the sun or wind. Heat comfort is neutral at 24 °C.`;
     }
@@ -1097,6 +1161,17 @@ body.is-readonly .needs-write { display: none; }
     set("zY", zoneY(z)); $("#zYAuto").checked = !!z.YAuto; $("#zY").disabled = !!z.YAuto || readOnly;
     $("#heightHint").textContent = sphere ? "The ball is centred on Y." : z.Height > 0 ? `Players count only within ${z.Height / 2} m above or below Y.` : "0 means any height.";
     if (withStats) renderStats(z);
+  }
+  // The zone's temperature across the day on this world's mission: one range, or the coldest and warmest months
+  function addedRange(t) {
+    const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    const lo = MAP.minTemps, hi = MAP.maxTemps;
+    const range = (m) => `${fmtT(round1(lo[m] + t))} °C at sunrise to ${fmtT(round1(hi[m] + t))} °C mid-afternoon`;
+    const same = lo.every((v) => v === lo[0]) && hi.every((v) => v === hi[0]);
+    if (same) return `On ${MAP.mission} that's ${range(0)}, before the sun bonus.`;
+    let cold = 0, warm = 0;
+    for (let m = 1; m < 12; m++) { if (lo[m] + hi[m] < lo[cold] + hi[cold]) cold = m; if (lo[m] + hi[m] > lo[warm] + hi[warm]) warm = m; }
+    return `On ${MAP.mission} that's ${range(cold)} in ${MONTHS[cold]}, and ${range(warm)} in ${MONTHS[warm]}, before the sun bonus.`;
   }
   // Names the zones this one overlaps and which way the priority goes
   function priorityHint(z) {
@@ -1300,14 +1375,61 @@ body.is-readonly .needs-write { display: none; }
     else if (k === "f") fitAll();
   });
 
+  // ---------- Worlds: loading and switching ----------
+  // Terrain files are large, so each is fetched the first time its world is opened
+  function loadTerrain(id) {
+    if (window.ZONE_TERRAIN && window.ZONE_TERRAIN[id]) return Promise.resolve();
+    return new Promise((res, rej) => {
+      const s = document.createElement("script");
+      s.src = "terrain-" + id + ".js";
+      s.onload = () => (window.ZONE_TERRAIN && window.ZONE_TERRAIN[id] ? res() : rej(new Error("no terrain")));
+      s.onerror = () => rej(new Error("could not load " + s.src));
+      document.head.appendChild(s);
+    });
+  }
+  let switching = null;
+  async function switchMap(id) {
+    if (!MAPS[id]) id = "nasdara";
+    const mySwitch = switching = {};
+    const sel = $("#mapSel"); sel.disabled = true;
+    cancelGesture(); setTool("move");
+    if (store && store.kind === "db") await flushAll();
+    setStatus("loading", "Loading " + MAPS[id].label + "…");
+    try { await loadTerrain(id); }
+    catch (e) {
+      if (mySwitch === switching) { setStatus("error", "Couldn't load " + MAPS[id].label); sel.value = mapId; sel.disabled = false; }
+      return;
+    }
+    if (mySwitch !== switching) return;
+    mapId = id; MAP = MAPS[id];
+    useTerrain(id);
+    prefs.set("map", id);
+    const url = new URL(location.href);
+    if (id === "nasdara") url.searchParams.delete("map"); else url.searchParams.set("map", id);
+    try { history.replaceState(null, "", url); } catch (e) { /* file:// pages can't change their address */ }
+    sel.value = id; sel.disabled = false;
+    document.title = MAP.label + " Temperature Zones";
+    $("#appTitle").textContent = MAP.label + " Temperature Zones";
+    $("#missionTxt").textContent = MAP.mission;
+    $("#stepTxt").textContent = STEP;
+    $("#profileTxt").innerHTML = MAP.profile ? `server's profile folder (<code>${esc(MAP.profile)}</code>)` : "server's profile folder";
+    svg.setAttribute("aria-label", "Map of " + MAP.label + " with temperature zones");
+    const bg = $("#mapBg"); bg.setAttribute("width", WORLD); bg.setAttribute("height", WORLD);
+    renderNames(); renderBuildings();
+    setLayer(layer);
+    $("#jsonIn").value = ""; $("#importMsg").textContent = ""; $("#copyMsg").textContent = "";
+    if (vw > 1) fitAll();
+    await openStore();
+  }
+  $("#mapSel").innerHTML = MAP_IDS.map((id) => `<option value="${id}">${esc(MAPS[id].label)}</option>`).join("");
+  $("#mapSel").addEventListener("change", (e) => switchMap(e.target.value));
+
   // ---------- Start ----------
-  $("#stepTxt").textContent = STEP;
   snapStep = parseInt(prefs.get("snap", "50"), 10); if (!Number.isFinite(snapStep)) snapStep = 50;
   $("#snapSel").value = String(snapStep);
-  renderNames(); renderBuildings();
-  setLayer(prefs.get("layer", "ground") === "height" ? "height" : "ground");
-  renderAll();
-  initStore();
+  layer = prefs.get("layer", "ground") === "height" ? "height" : "ground";
+  const askedMap = new URL(location.href).searchParams.get("map");
+  switchMap(MAPS[askedMap] ? askedMap : prefs.get("map", "nasdara"));
 })();
 </script>
 </body>
