@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Nasdara Temperature Zones</title>
+<title>DayZ Temperature Zones</title>
 <meta name="description" content="Draw temperature zones on a terrain map of DayZ's Nasdara or Chernarus and export them as a TemperatureZones config.json.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%231e5a57'/%3E%3Cpath d='M16 6a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7z' fill='%23fff'/%3E%3C/svg%3E">
 <style>:root{color-scheme:light;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}body{margin:0;font:14px system-ui,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style>
@@ -203,7 +203,7 @@ body.is-readonly .needs-write { display: none; }
 <body>
 <header class="app-header">
   <div>
-    <h1 id="appTitle">Nasdara Temperature Zones</h1>
+    <h1>DayZ Temperature Zones</h1>
     <p>Zones for ZERO_TemperatureZones on <span id="missionTxt">Hardcore Desert</span>. Terrain sampled from the game every <span id="stepTxt">25</span> m.</p>
   </div>
   <span class="status" id="status" data-state="loading">Loading zones…</span>
@@ -1408,8 +1408,6 @@ body.is-readonly .needs-write { display: none; }
     if (id === "nasdara") url.searchParams.delete("map"); else url.searchParams.set("map", id);
     try { history.replaceState(null, "", url); } catch (e) { /* file:// pages can't change their address */ }
     sel.value = id; sel.disabled = false;
-    document.title = MAP.label + " Temperature Zones";
-    $("#appTitle").textContent = MAP.label + " Temperature Zones";
     $("#missionTxt").textContent = MAP.mission;
     $("#stepTxt").textContent = STEP;
     $("#profileTxt").innerHTML = MAP.profile ? `server's profile folder (<code>${esc(MAP.profile)}</code>)` : "server's profile folder";
